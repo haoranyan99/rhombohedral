@@ -1,0 +1,137 @@
+# ============================================================
+# Win / Linux — Serial (no MPI) — g++
+# ============================================================
+
+# test_Structure_and_KPath
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_Structure_and_KPath.cpp \
+  -o test_Structure_and_KPath
+
+# test_dos
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_dos.cpp \
+  -o test_dos
+
+# test_bareband
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_bareband.cpp \
+  -o test_bareband
+
+
+# ============================================================
+# Win / Linux — MPI Parallel — mpicxx
+# ============================================================
+
+
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_dos.cpp \
+  -o test_dos
+
+# calculate_chi (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Executables/calculate_chi.cpp \
+  -o calculate_chi
+
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Executables/calculate_fermi.cpp \
+  -o calculate_fermi
+
+
+mpirun -np 4 ./test_dos config.json
+mpirun -np 4 ./calculate_chi config.json
+mpirun -np 4 ./test_RG_fermi_patch config.json
+mpirun -np 4 ./calculate_fermi config.json
+
+
+# ============================================================
+# macOS — Serial (no MPI) — clang++
+# ============================================================
+
+# test_Structure_and_KPath
+clang++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_Structure_and_KPath.cpp \
+  -o test_Structure_and_KPath
+
+# test_RG_dos_SK
+clang++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_dos.cpp \
+  -o test_dos
+
+# test_bareband
+clang++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_bareband.cpp \
+  -o test_bareband
+
+# calculate_chi (serial)
+clang++ -std=c++17 -O2 -DNDEBUG \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Executables/calculate_chi.cpp \
+  -o calculate_chi
+
+
+
+
+# ============================================================
+# macOS — MPI Parallel — mpicxx
+# ============================================================
+
+# test_find_EF_mpi
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_find_EF_mpi.cpp \
+  -o test_find_EF_mpi
+
+# test_RG_fermi_patch
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_RG_fermi_patch.cpp \
+  -o test_RG_fermi_patch
+
+# test_chi
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_chi.cpp \
+  -o test_chi
+
+# calculate_chi (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Executables/calculate_chi.cpp \
+  -o calculate_chi
+
+# calculate_fermi (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Executables/calculate_fermi.cpp \
+  -o calculate_fermi
+
+# calculate_fermi (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. -I./include -I./include/eigen-3.4.0 \
+  -I./Common -I./PhysStruct -I./Source \
+  Test/test_dos.cpp \
+  -o test_dos
