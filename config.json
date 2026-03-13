@@ -12,10 +12,10 @@
    
     "bareband": { 
       "model":"sk", 
-      "Dfield_eV": 0.012,
+      "Dfield_eV": 0.084,
       "GMKG": { "Nk_seg": 1000, "frac_local":0.20 },
       "localK_MKKp": { "Nk_seg": 1000, "frac_local":0.20 },
-      "output_suffix": "0.012"
+      "output_suffix": "0.084"
     },
    
     "test_dos": {
@@ -29,7 +29,7 @@
     "calculate_fermi": {
       "model": "sk",     
       "mode": "mu",
-      "Dfield_eV": 0.012,
+      "Dfield_eV": 0.084,
       "kmesh": { "type":"BZ", "Nk":200, "dk_frac": 0.0003},
       "temperatureList_K": {"min": 0.0, "max": 8.0, "num": 9}, 
       "dopingList_10^12cm^-2": {"min": 0, "max": 1, "num": 11},
