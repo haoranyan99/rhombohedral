@@ -66,13 +66,6 @@ clang++ -std=c++17 -O2 -DNDEBUG \
   Test/test_Structure_and_KPath.cpp \
   -o test_Structure_and_KPath
 
-# test_RG_dos_SK
-clang++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_dos.cpp \
-  -o test_dos
-
 # test_bareband
 clang++ -std=c++17 -O2 -DNDEBUG \
   -I. -I./include -I./include/eigen-3.4.0 \
