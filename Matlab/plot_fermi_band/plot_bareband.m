@@ -1,10 +1,17 @@
 function out_png = plot_bareband()
 
-    default_path = "/Users/haoranyan/data/rg_data/";
+    % -----------------------------
+    % choose file
+    % -----------------------------
+    default_root = "/Users/haoranyan/rg_master/data/";
+    if ~isfolder(default_root)
+        warning("Default root does not exist: %s\nFallback to current folder.", default_root);
+        default_root = pwd;
+    end
 
-    [fname, fpath] = uigetfile({'*.txt','band data (*.txt)'; '*.*','All files'}, ...
-                               'Select RG band file', ...
-                               default_path);
+    default_path = fullfile(default_root, "*.txt");
+    [fname, fpath] = uigetfile({'*.txt','DOS data (*.txt)'}, ...
+                               'Select RG DOS file', default_path);
     if isequal(fname,0)
         error("No file selected.");
     end
@@ -13,7 +20,6 @@ function out_png = plot_bareband()
     if ~isfile(in_path)
         error("Input file not found: %s", in_path);
     end
-    fprintf("Using file:\n  %s\n", in_path);
 
     % -----------------------------
     % read numeric data

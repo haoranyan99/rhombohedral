@@ -573,7 +573,6 @@ inline core::GridData RG_ModelBase::cal_chi_grid_Ef(
                             }
                         }
                     }
-
                     nPair_local += (long long)dim * (long long)dim;
                 }
             }
