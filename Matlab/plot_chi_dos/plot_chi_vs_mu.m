@@ -1,354 +1,527 @@
-function plot_chi_vs_mu()
-% plot_chi_vs_mu_UI
-% UI sliders to browse chiEf outputs and plot Re(chi) vs mu at fixed (T, iq, jq).
+function out_png = plot_chi_vs_mu()
+% plot_chi_vs_mu_only
+% Scan chi*.txt recursively under a D folder, parse header T/doping/mu(EF),
+% also parse polar from folder name like: polar_meV0.000
+% Deduplicate by (T,doping,mu,polar) keeping the OLDEST file.
 %
-% Expected folder structure (recommended):
-%   data/chiEf_{suffix}/D{Dfield}/T{T_K}/mu{mu}/chiEf_*.txt
+% Build ONE figure:
+%   - Re chi(iq,jq) vs mu
+% with:
+%   - T slider
+%   - polar slider
+%   - iq / jq edit boxes
 %
-% The script is tolerant to an extra run_tag layer:
-%   D_dir/T*
-%   or D_dir/*/T*
-%
-% It reads ONE chi file to infer available iq/jq lists, then plots
-% Re(chi) at selected (iq,jq) vs mu across mu folders.
+% File numeric table formats supported:
+%   if >=8 cols: idx iq jq qx qy Re Im ...
+%   else:        iq jq qx qy Re Im ...
 
-    % -----------------------------
-    % choose D directory
-    % -----------------------------
-    base_dir = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_500\D0.067";
-    if ~exist(base_dir,"dir"), base_dir = "."; end
+out_png = "";
 
-    D_dir = uigetdir(base_dir, "Select ONE D folder (e.g. data/chiEf_6L_3/D0.000)");
-    if D_dir == 0
-        fprintf("Canceled.\n");
-        return;
-    end
-    D_dir = string(D_dir);
-    fprintf("Selected D folder:\n  %s\n", D_dir);
+% -----------------------------
+% default iq/jq
+% -----------------------------
+iq0 = -267;
+jq0 = -267;
 
-    % -----------------------------
-    % resolve where T folders live
-    %   prefer: D_dir/T*
-    %   else:   D_dir/*/T*
-    % -----------------------------
-    [chi_run_dir, Tlist] = resolve_T_root(D_dir);
-    fprintf("Resolved T root:\n  %s\n", chi_run_dir);
+% -----------------------------
+% choose root folder
+% -----------------------------
+default_root = "/Users/haoranyan/rg_master/data/chi_sk_mu_400/D0.012";
+% default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.067";
 
-    % parse T values
-    T_vals = nan(numel(Tlist),1);
-    for i = 1:numel(Tlist)
-        T_vals(i) = sscanf(Tlist(i).name, "T%f");
-    end
-    [T_vals, tidx] = sort(T_vals);
-    Tlist = Tlist(tidx);
-
-    % -----------------------------
-    % infer mu list from FIRST T folder
-    % -----------------------------
-    mu_dirs = dir(fullfile(chi_run_dir, Tlist(1).name, "mu*"));
-    mu_dirs = mu_dirs([mu_dirs.isdir]);
-    if isempty(mu_dirs)
-        error("No mu folders under: %s", fullfile(chi_run_dir, Tlist(1).name));
-    end
-
-    mu_vals = nan(numel(mu_dirs),1);
-    for i = 1:numel(mu_dirs)
-        mu_vals(i) = sscanf(mu_dirs(i).name, "mu%f");
-    end
-    [mu_vals, midx] = sort(mu_vals);
-    mu_dirs = mu_dirs(midx);
-
-    % -----------------------------
-    % read one chi file to infer iq/jq lists
-    % -----------------------------
-    chi0 = find_latest_chi_in_folder(fullfile(chi_run_dir, Tlist(1).name, mu_dirs(1).name));
-    if strlength(chi0)==0
-        error("No chi_*.txt (or chi*.txt) found in: %s", ...
-              fullfile(chi_run_dir, Tlist(1).name, mu_dirs(1).name));
-    end
-    D0 = read_chi_file_auto(chi0);
-
-    iq_list = sort(unique(D0.iq));
-    jq_list = sort(unique(D0.jq));
-
-    % defaults
-    T_idx  = 1;
-    iq_idx = pick_default_index(iq_list, 0);
-    jq_idx = pick_default_index(jq_list, 0);
-
-    % -----------------------------
-    % UI
-    % -----------------------------
-    FS = 16;
-    fig = figure("Color","w","Units","pixels","Position",[80 80 1200 820]);
-
-    ax = axes(fig,"Position",[0.10 0.32 0.85 0.62]);
-    box(ax,"on"); grid(ax,"on"); hold(ax,"on");
-    set(ax,"FontSize",FS,"TickDir","out","LineWidth",1.0);
-
-    hLine = plot(ax, nan, nan, "o-", "LineWidth",1.8,"MarkerSize",6);
-
-    xlabel(ax,"\mu (eV)","FontSize",FS);
-    ylabel(ax,"Re(\chi) (arb.)","FontSize",FS);
-
-    % ---- sliders ----
-    sT = uicontrol(fig,"Style","slider","Units","normalized", ...
-        "Position",[0.10 0.22 0.85 0.04], ...
-        "Min",1,"Max",numel(T_vals),"Value",T_idx, ...
-        "SliderStep",slider_step(numel(T_vals)));
-
-    sIQ = uicontrol(fig,"Style","slider","Units","normalized", ...
-        "Position",[0.10 0.14 0.85 0.04], ...
-        "Min",1,"Max",numel(iq_list),"Value",iq_idx, ...
-        "SliderStep",slider_step(numel(iq_list)));
-
-    sJQ = uicontrol(fig,"Style","slider","Units","normalized", ...
-        "Position",[0.10 0.06 0.85 0.04], ...
-        "Min",1,"Max",numel(jq_list),"Value",jq_idx, ...
-        "SliderStep",slider_step(numel(jq_list)));
-
-    mkLabel(fig, FS, "T",  0.22);
-    mkLabel(fig, FS, "iq", 0.14);
-    mkLabel(fig, FS, "jq", 0.06);
-
-    txtT  = mkValue(fig, FS, 0.26);
-    txtIQ = mkValue(fig, FS, 0.18);
-    txtJQ = mkValue(fig, FS, 0.10);
-
-    set([sT,sIQ,sJQ],"Callback",@onSlide);
-
-    update_plot();
-
-    % =============================
-    function onSlide(~,~)
-        sT.Value  = round(sT.Value);
-        sIQ.Value = round(sIQ.Value);
-        sJQ.Value = round(sJQ.Value);
-        update_plot();
-    end
-
-    function update_plot()
-        it  = clampi(round(sT.Value),  1, numel(T_vals));
-        ii  = clampi(round(sIQ.Value), 1, numel(iq_list));
-        jj  = clampi(round(sJQ.Value), 1, numel(jq_list));
-
-        T_now  = T_vals(it);
-        iq_now = iq_list(ii);
-        jq_now = jq_list(jj);
-
-        txtT.String  = sprintf("T = %.4f K", T_now);
-        txtIQ.String = sprintf("iq = %d", iq_now);
-        txtJQ.String = sprintf("jq = %d", jq_now);
-
-        re_vec = nan(numel(mu_vals),1);
-        qx_now = NaN; qy_now = NaN;
-
-        T_folder = fullfile(chi_run_dir, Tlist(it).name);
-
-        for k = 1:numel(mu_vals)
-            mu_folder = fullfile(T_folder, sprintf("mu%.6f", mu_vals(k)));
-
-            % tolerate tiny format mismatch in folder name
-            if ~exist(mu_folder,"dir")
-                mu_folder = find_matching_mu_folder(T_folder, mu_vals(k));
-                if strlength(mu_folder)==0, continue; end
-            end
-
-            chi_file = find_latest_chi_in_folder(mu_folder);
-            if strlength(chi_file)==0, continue; end
-
-            D = read_chi_file_auto(chi_file);
-            m = (D.iq==iq_now) & (D.jq==jq_now);
-            if any(m)
-                id = find(m,1,"first");
-                re_vec(k) = real(D.chi(id));
-                if ~isfinite(qx_now)
-                    qx_now = D.qx(id);
-                    qy_now = D.qy(id);
-                end
-            end
-        end
-
-        ok = isfinite(re_vec);
-        set(hLine,"XData",mu_vals(ok),"YData",re_vec(ok));
-
-        if isfinite(qx_now)
-            title(ax, sprintf( ...
-                "Re\\chi vs \\mu | T=%.4f K | (iq,jq)=(%d,%d) | (qx,qy)=(%.6g, %.6g)", ...
-                T_now, iq_now, jq_now, qx_now, qy_now), ...
-                "Interpreter","tex","FontWeight","normal");
-        else
-            title(ax, sprintf( ...
-                "Re\\chi vs \\mu | T=%.4f K | (iq,jq)=(%d,%d)", ...
-                T_now, iq_now, jq_now), ...
-                "Interpreter","tex","FontWeight","normal");
-        end
-    end
+if ~isfolder(default_root)
+    warning("Default folder not found: %s\nFallback to pwd.", default_root);
+    default_root = string(pwd);
 end
 
-% ============================================================
-% Resolve where T folders live:
-%   prefer: D_dir/T*
-%   else:   D_dir/*/T*
-% ============================================================
-function [chi_run_dir, Tlist] = resolve_T_root(D_dir)
-    % case A
-    Tlist = dir(fullfile(D_dir, "T*"));
-    Tlist = Tlist([Tlist.isdir]);
-    if ~isempty(Tlist)
-        chi_run_dir = D_dir;
-        return;
-    end
+root = uigetdir(default_root, 'Select root folder that CONTAINS chi*.txt (recursive)');
+if isequal(root, 0), error('User cancelled.'); end
+root = string(root);
+fprintf("Root folder:\n  %s\n", root);
 
-    % case B: search one level down
-    sub = dir(D_dir);
-    sub = sub([sub.isdir]);
-    sub = sub(~ismember({sub.name},{'.','..'}));
+% -----------------------------
+% resolve where T folders live
+% -----------------------------
+[chi_run_dir, ~] = resolve_T_root(root);
 
-    for i = 1:numel(sub)
-        cand = fullfile(D_dir, sub(i).name);
-        T2 = dir(fullfile(cand, "T*"));
-        T2 = T2([T2.isdir]);
-        if ~isempty(T2)
-            chi_run_dir = string(cand);
-            Tlist = T2;
-            return;
-        end
-    end
-
-    error("Cannot find any T* folders under:\n  %s\nor under one subfolder level.", D_dir);
+% -----------------------------
+% scan all chi files (recursive)
+% -----------------------------
+files = dir(fullfile(chi_run_dir, "**", "chi*.txt"));
+files = files(~[files.isdir]);
+Nraw = numel(files);
+if Nraw == 0
+    error("No chi*.txt found under: %s", chi_run_dir);
 end
+fprintf("[scan] found %d raw chi files\n", Nraw);
 
-function mu_folder = find_matching_mu_folder(T_folder, mu_val)
-    mu_folder = "";
-    dd = dir(fullfile(T_folder, "mu*"));
-    dd = dd([dd.isdir]);
-    for k = 1:numel(dd)
-        v = sscanf(dd(k).name, "mu%f");
-        if ~isempty(v) && abs(v - mu_val) < 5e-7  % mu uses 6 decimals typically
-            mu_folder = string(fullfile(T_folder, dd(k).name));
-            return;
+% -----------------------------
+% parse headers and keep OLDEST per (T,doping,mu,polar)
+% -----------------------------
+meta_map = containers.Map('KeyType','char','ValueType','any');
+
+t0 = tic;
+t_last_print = 0;
+print_every_sec = 0.5;
+
+n_skip_noT = 0;
+
+for k = 1:Nraw
+    p = string(fullfile(files(k).folder, files(k).name));
+
+    m = parse_header_T_doping_mu_mode(p);
+    pol = parse_polar_from_path(p);
+
+    if ~isfinite(m.T)
+        n_skip_noT = n_skip_noT + 1;
+        t_now = toc(t0);
+        if (t_now - t_last_print) > print_every_sec || k == Nraw
+            print_progress(k, Nraw, t_now);
+            t_last_print = t_now;
         end
-    end
-end
-
-function p = find_latest_chi_in_folder(folder)
-% Prefer chiEf_*.txt; fallback chi_*.txt
-    p = "";
-    if ~exist(folder,"dir"), return; end
-
-    files = dir(fullfile(folder,"chi_*.txt"));
-    if isempty(files)
-        files = dir(fullfile(folder,"chi*.txt"));
-    end
-    if isempty(files), return; end
-
-    [~,ord] = sort({files.name});
-    p = string(fullfile(folder,files(ord(end)).name));
-end
-
-function D = read_chi_file_auto(fname)
-% Supports numeric formats:
-%   (A) 7 cols:  iq jq qx qy Re Im nKpair
-%   (B) 8 cols:  idx iq jq qx qy Re Im nKpair
-%   (C) 9 cols:  idx iq jq qx qy Re Im nKpair nNesting
-%
-% If nNesting exists, D.nNest is filled, otherwise D.nNest = NaN.
-
-    fid = fopen(fname, 'r');
-    if fid < 0, error("Cannot open %s", fname); end
-
-    % skip header
-    while true
-        pos = ftell(fid);
-        line = fgetl(fid);
-        if ~ischar(line), break; end
-        t = strtrim(line);
-        if isempty(t), continue; end
-        if startsWith(t,"#")
-            continue;
-        else
-            fseek(fid, pos, 'bof');
-            break;
-        end
+        continue;
     end
 
-    pos0 = ftell(fid);
-    first = fgetl(fid);
-    if ~ischar(first)
-        fclose(fid);
-        error("No numeric data in %s", fname);
-    end
-    nums = sscanf(first, '%f');
-    ncol = numel(nums);
-    fseek(fid, pos0, 'bof');
+    key = make_param_key4(m.T, m.doping, m.mu, pol);
+    this_time = files(k).datenum;
 
-    D.nNest = [];
-
-    if ncol == 9
-        C = textscan(fid, '%f %f %f %f %f %f %f %f %f', 'CollectOutput', true);
-        M = C{1};
-        D.iq    = M(:,2);
-        D.jq    = M(:,3);
-        D.qx    = M(:,4);
-        D.qy    = M(:,5);
-        D.chi   = M(:,6) + 1i*M(:,7);
-        D.nK    = M(:,8);
-        D.nNest = M(:,9);
-    elseif ncol == 8
-        C = textscan(fid, '%f %f %f %f %f %f %f %f', 'CollectOutput', true);
-        M = C{1};
-        D.iq  = M(:,2);
-        D.jq  = M(:,3);
-        D.qx  = M(:,4);
-        D.qy  = M(:,5);
-        D.chi = M(:,6) + 1i*M(:,7);
-        D.nK  = M(:,8);
-        D.nNest = nan(size(D.nK));
-    elseif ncol == 7
-        C = textscan(fid, '%f %f %f %f %f %f %f', 'CollectOutput', true);
-        M = C{1};
-        D.iq  = M(:,1);
-        D.jq  = M(:,2);
-        D.qx  = M(:,3);
-        D.qy  = M(:,4);
-        D.chi = M(:,5) + 1i*M(:,6);
-        D.nK  = M(:,7);
-        D.nNest = nan(size(D.nK));
+    if ~isKey(meta_map, key)
+        meta_map(key) = struct( ...
+            "path",   p, ...
+            "T",      m.T, ...
+            "doping", m.doping, ...
+            "mu",     m.mu, ...
+            "polar",  pol, ...
+            "mode",   m.mode, ...
+            "time",   this_time);
     else
-        fclose(fid);
-        error("Unexpected numeric column count (%d) in %s", ncol, fname);
+        old = meta_map(key);
+        if this_time < old.time
+            meta_map(key) = struct( ...
+                "path",   p, ...
+                "T",      m.T, ...
+                "doping", m.doping, ...
+                "mu",     m.mu, ...
+                "polar",  pol, ...
+                "mode",   m.mode, ...
+                "time",   this_time);
+        end
     end
 
-    fclose(fid);
+    t_now = toc(t0);
+    if (t_now - t_last_print) > print_every_sec || k == Nraw
+        print_progress(k, Nraw, t_now);
+        t_last_print = t_now;
+    end
 end
 
-function idx = pick_default_index(list,target)
-    k = find(list==target,1);
-    if isempty(k), idx = round((numel(list)+1)/2);
-    else, idx = k;
+fprintf("[scan done] kept=%d | skipped(no T)=%d | time=%.1fs\n", ...
+    meta_map.Count, n_skip_noT, toc(t0));
+
+% -----------------------------
+% map -> struct array meta
+% -----------------------------
+keys_list = meta_map.keys;
+meta = repmat(struct("path","", "T",NaN, "doping",NaN, "mu",NaN, "polar",NaN, "mode",""), numel(keys_list), 1);
+
+for i = 1:numel(keys_list)
+    tmp = meta_map(keys_list{i});
+    meta(i).path   = tmp.path;
+    meta(i).T      = tmp.T;
+    meta(i).doping = tmp.doping;
+    meta(i).mu     = tmp.mu;
+    meta(i).polar  = tmp.polar;
+    meta(i).mode   = tmp.mode;
+end
+
+% -----------------------------
+% unique T / polar
+% -----------------------------
+Tall = [meta.T]';
+Tuniq = unique(Tall(isfinite(Tall)));
+Tuniq = sort(Tuniq);
+if isempty(Tuniq), error("No finite T parsed from headers."); end
+
+Pall = [meta.polar]';
+Puniq = unique(Pall(isfinite(Pall)));
+Puniq = sort(Puniq);
+if isempty(Puniq)
+    warning("No polar parsed from path. Use polar=0 as fallback.");
+    Puniq = 0;
+    for i = 1:numel(meta)
+        meta(i).polar = 0;
     end
+end
+
+it0 = 1;
+ip0 = 1;
+
+% -----------------------------
+% plot defaults
+% -----------------------------
+FS = 16;
+set(groot, "defaultAxesTickLabelInterpreter", "latex");
+set(groot, "defaultLegendInterpreter", "latex");
+set(groot, "defaultTextInterpreter", "latex");
+
+% -----------------------------
+% build figure
+% -----------------------------
+fig = figure("Color","w", "Units","pixels", "Position",[80 80 1100 720], ...
+    "Name","chi vs mu (T + polar sliders)");
+ax = axes(fig, "Position",[0.10 0.26 0.86 0.66]);
+
+hInfo = uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.10 0.945 0.86 0.035], "String","", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+
+% -----------------------------
+% controls
+% -----------------------------
+uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.10 0.16 0.08 0.035], "String","T idx", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+sT = uicontrol(fig, "Style","slider", "Units","normalized", ...
+    "Position",[0.18 0.165 0.38 0.030], ...
+    "Min",1, "Max",numel(Tuniq), "Value", it0, ...
+    "SliderStep", slider_step(numel(Tuniq)), ...
+    "Callback", @onTChanged);
+tT = uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.58 0.160 0.12 0.035], "String","", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+
+uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.10 0.11 0.08 0.035], "String","polar idx", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+sP = uicontrol(fig, "Style","slider", "Units","normalized", ...
+    "Position",[0.18 0.115 0.38 0.030], ...
+    "Min",1, "Max",numel(Puniq), "Value", ip0, ...
+    "SliderStep", slider_step(numel(Puniq)), ...
+    "Callback", @onPolarChanged);
+tP = uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.58 0.110 0.12 0.035], "String","", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+
+uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.75 0.16 0.05 0.035], "String","iq", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+eIq = uicontrol(fig, "Style","edit", "Units","normalized", ...
+    "Position",[0.79 0.165 0.06 0.032], "String", num2str(iq0), ...
+    "FontSize", 11, "Callback", @onIqJqChanged);
+
+uicontrol(fig, "Style","text", "Units","normalized", ...
+    "Position",[0.86 0.16 0.05 0.035], "String","jq", ...
+    "BackgroundColor","w", "FontSize", 11, "HorizontalAlignment","left");
+eJq = uicontrol(fig, "Style","edit", "Units","normalized", ...
+    "Position",[0.90 0.165 0.06 0.032], "String", num2str(jq0), ...
+    "FontSize", 11, "Callback", @onIqJqChanged);
+
+uicontrol(fig, "Style","pushbutton", "Units","normalized", ...
+    "Position",[0.78 0.060 0.18 0.050], ...
+    "String","Save PNG", "FontSize", 12, ...
+    "Callback", @onSave);
+
+% -----------------------------
+% shared state
+% -----------------------------
+state = struct();
+state.meta  = meta;
+state.Tuniq = Tuniq;
+state.Puniq = Puniq;
+state.it    = it0;
+state.ip    = ip0;
+state.iq    = iq0;
+state.jq    = jq0;
+
+% initial draw
+update_figure();
+
+% ============================================================
+% callbacks
+% ============================================================
+function onTChanged(~,~)
+    state.it = clampi(round(get(sT,"Value")), 1, numel(state.Tuniq));
+    set(sT,"Value", state.it);
+    update_figure();
+end
+
+function onPolarChanged(~,~)
+    state.ip = clampi(round(get(sP,"Value")), 1, numel(state.Puniq));
+    set(sP,"Value", state.ip);
+    update_figure();
+end
+
+function onIqJqChanged(~,~)
+    [iq, jq] = read_iqjq(eIq, eJq);
+    state.iq = iq;
+    state.jq = jq;
+    update_figure();
+end
+
+function onSave(~,~)
+    Tnow = state.Tuniq(state.it);
+    Pnow = state.Puniq(state.ip);
+    out_png = fullfile(root, sprintf("chi_vs_mu_T%.6g_polar%.6g_iq%d_jq%d.png", ...
+        Tnow, Pnow, state.iq, state.jq));
+    exportgraphics(fig, out_png, "Resolution", 300);
+    fprintf("Saved:\n  %s\n", out_png);
+end
+
+% ============================================================
+% core update
+% ============================================================
+function update_figure()
+    Tnow = state.Tuniq(state.it);
+    Pnow = state.Puniq(state.ip);
+
+    set(tT,"String", sprintf("T=%.6g", Tnow));
+    set(tP,"String", sprintf("polar=%.6g", Pnow));
+
+    Ttol = 1e-9;
+    Ptol = 1e-12;
+
+    idxTP = find(abs([state.meta.T] - Tnow) < Ttol & abs([state.meta.polar] - Pnow) < Ptol);
+
+    if isempty(idxTP)
+        cla(ax);
+        text(ax, 0.5, 0.5, "No files at this (T, polar)", ...
+            "Units","normalized", "HorizontalAlignment","center");
+        set(hInfo, "String", sprintf("T=%.12g | polar=%.12g | iq=%d jq=%d | valid=0", ...
+            Tnow, Pnow, state.iq, state.jq));
+        return;
+    end
+
+    paths = string({state.meta(idxTP).path});
+    mu    = [state.meta(idxTP).mu]';
+    chi   = nan(numel(paths),1);
+
+    for k2 = 1:numel(paths)
+        chi(k2) = extract_chi_at_iqjq(paths(k2), state.iq, state.jq);
+    end
+
+    ok = isfinite(chi) & isfinite(mu);
+    paths = paths(ok); %#ok<NASGU>
+    mu    = mu(ok);
+    chi   = chi(ok);
+
+    set(hInfo, "String", sprintf("T=%.12g | polar=%.12g | iq=%d jq=%d | valid=%d | plot: \\chi(\\mu)", ...
+        Tnow, Pnow, state.iq, state.jq, numel(chi)));
+
+    cla(ax);
+
+    if isempty(chi)
+        text(ax, 0.5, 0.5, "No valid chi or mu at this (T, polar, iq, jq)", ...
+            "Units","normalized", "HorizontalAlignment","center");
+        return;
+    end
+
+    hold(ax,"on");
+
+    scatter(ax, mu, chi, 18, "filled", ...
+        "MarkerFaceAlpha", 0.20, "MarkerEdgeAlpha", 0.20);
+
+    [xm, ym_mean, ~, ~] = group_mean_std(mu, chi);
+    if ~isempty(xm)
+        plot(ax, xm, ym_mean, "-", "LineWidth", 1.8);
+    end
+
+    hold(ax,"off");
+
+    xlabel(ax, "\mu (eV)", "FontSize", FS);
+    ylabel(ax, "Re \chi(iq,jq)", "FontSize", FS);
+    title(ax, sprintf("Re \\chi vs \\mu @ T=%.6g, polar=%.6g (iq=%d,jq=%d)", ...
+        Tnow, Pnow, state.iq, state.jq), ...
+        "FontSize", FS, "FontWeight","normal");
+    grid(ax,"on");
+    set(ax, "FontSize", FS, "LineWidth", 1.0, "TickDir","out", "Box","on");
+end
+
+end % ===== end main =====
+
+
+% ============================================================
+% helpers
+% ============================================================
+
+function pol = parse_polar_from_path(p)
+pol = NaN;
+s = char(p);
+tok = regexp(s, "polar[_\-]meV([+\-]?\d*\.?\d+(?:[eE][+\-]?\d+)?)", "tokens", "once");
+if ~isempty(tok)
+    pol = str2double(tok{1});
+end
+end
+
+function [chi_run_dir, Tlist] = resolve_T_root(D_dir)
+Tlist = dir(fullfile(D_dir, "T*"));
+Tlist = Tlist([Tlist.isdir]);
+Tlist = Tlist(~ismember({Tlist.name},{'.','..'}));
+if ~isempty(Tlist)
+    chi_run_dir = string(D_dir);
+    return;
+end
+
+sub = dir(D_dir);
+sub = sub([sub.isdir]);
+sub = sub(~ismember({sub.name},{'.','..'}));
+
+for i = 1:numel(sub)
+    cand = fullfile(D_dir, sub(i).name);
+    T2 = dir(fullfile(cand, "T*"));
+    T2 = T2([T2.isdir]);
+    T2 = T2(~ismember({T2.name},{'.','..'}));
+    if ~isempty(T2)
+        chi_run_dir = string(D_dir);
+        Tlist = T2;
+        return;
+    end
+end
+
+error("Cannot find any T* folders under:\n  %s\nor under one subfolder level.", D_dir);
 end
 
 function step = slider_step(n)
-    if n<=1, step=[1 1];
-    else, step=[1/(n-1) 5/(n-1)]; step(step>1)=1;
+if n <= 1
+    step = [1 1];
+else
+    step = [1/(n-1) min(10/(n-1),1)];
+end
+end
+
+function x = clampi(x, a, b)
+x = min(max(x, a), b);
+end
+
+function [iq, jq] = read_iqjq(eIq, eJq)
+iq = str2double(get(eIq,"String"));
+jq = str2double(get(eJq,"String"));
+if ~isfinite(iq), iq = 0; end
+if ~isfinite(jq), jq = 0; end
+iq = round(iq);
+jq = round(jq);
+set(eIq,"String", num2str(iq));
+set(eJq,"String", num2str(jq));
+end
+
+function key = make_param_key4(T, dop, mu, pol)
+key = sprintf("T=%s|dop=%s|mu=%s|pol=%s", fnum(T), fnum(dop), fnum(mu), fnum(pol));
+end
+
+function s = fnum(x)
+if ~isfinite(x)
+    s = "nan";
+else
+    s = sprintf("%.12g", x);
+end
+end
+
+function print_progress(k, N, elapsed)
+pct = 100*k/N;
+if k <= 1
+    eta = NaN;
+else
+    rate = elapsed / k;
+    eta  = rate * (N - k);
+end
+if isfinite(eta)
+    fprintf("  scan %4d/%4d (%.1f%%)  elapsed %.1fs  ETA %.1fs\n", k, N, pct, elapsed, eta);
+else
+    fprintf("  scan %4d/%4d (%.1f%%)  elapsed %.1fs\n", k, N, pct, elapsed);
+end
+drawnow;
+end
+
+function m = parse_header_T_doping_mu_mode(in_path)
+m = struct("T",NaN,"doping",NaN,"mu",NaN,"mode","");
+
+fid = fopen(in_path,'r');
+if fid < 0, return; end
+c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+num = "([+\-]?\d*\.?\d+(?:[eE][+\-]?\d+)?)";
+
+while true
+    tline = fgetl(fid);
+    if ~ischar(tline), break; end
+    s0 = strtrim(tline);
+    if ~startsWith(s0, "#")
+        break;
+    end
+    s = strtrim(erase(s0, "#"));
+
+    if strlength(m.mode)==0
+        tok = regexp(s, "mode\s*=\s*([A-Za-z0-9_\-]+)", "tokens", "once");
+        if ~isempty(tok), m.mode = string(tok{1}); end
+    end
+
+    if ~isfinite(m.T)
+        tok = regexp(s, "(?:^|\s)T(?:_K)?\s*=\s*" + num, "tokens", "once");
+        if ~isempty(tok), m.T = str2double(tok{1}); end
+    end
+
+    if ~isfinite(m.doping)
+        tok = regexp(s, "doping\s*=\s*" + num, "tokens", "once");
+        if ~isempty(tok), m.doping = str2double(tok{1}); end
+    end
+
+    if ~isfinite(m.mu)
+        tok = regexp(s, "(?:^|\s)(?:mu|mu_eV|EF|EF_eV)\s*=\s*" + num, "tokens", "once");
+        if ~isempty(tok), m.mu = str2double(tok{1}); end
     end
 end
-
-function x = clampi(x,a,b)
-    x = min(max(x,a),b);
 end
 
-function mkLabel(fig, FS, str, y)
-    uicontrol(fig,"Style","text","Units","normalized", ...
-        "Position",[0.02 y 0.07 0.04], ...
-        "String",str,"FontSize",FS,"BackgroundColor","w");
+function val = extract_chi_at_iqjq(in_path, iq0, jq0)
+val = NaN;
+
+try
+    raw = readmatrix(in_path, "FileType","text", "CommentStyle","#");
+catch
+    return;
 end
 
-function h = mkValue(fig, FS, y)
-    h = uicontrol(fig,"Style","text","Units","normalized", ...
-        "Position",[0.10 y 0.50 0.03], ...
-        "String","","FontSize",FS, ...
-        "BackgroundColor","w","HorizontalAlignment","left");
+if isempty(raw) || size(raw,2) < 6
+    return;
+end
+
+if size(raw,2) >= 8
+    iq = raw(:,2);
+    jq = raw(:,3);
+    re = raw(:,6);
+else
+    iq = raw(:,1);
+    jq = raw(:,2);
+    re = raw(:,5);
+end
+
+idx = find(iq == iq0 & jq == jq0, 1, "first");
+if isempty(idx), return; end
+val = double(re(idx));
+end
+
+function [xuniq, ymean, ystd, ncount] = group_mean_std(x, y)
+x = double(x(:));
+y = double(y(:));
+
+ok = isfinite(x) & isfinite(y);
+x = x(ok);
+y = y(ok);
+
+if isempty(x)
+    xuniq = [];
+    ymean = [];
+    ystd = [];
+    ncount = [];
+    return;
+end
+
+[xuniq, ~, ic] = unique(x);
+ymean  = accumarray(ic, y, [], @mean);
+ystd   = accumarray(ic, y, [], @std);
+ncount = accumarray(ic, 1, [], @sum);
+
+[xuniq, ord] = sort(xuniq);
+ymean  = ymean(ord);
+ystd   = ystd(ord); 
+ncount = ncount(ord);
 end
