@@ -12,18 +12,18 @@
    
     "bareband": {
       "model":"sk",
-      "Dfield_eV": 0.084,
+      "Dfield_eV": -0.012,
       "GMKG": { "Nk_seg": 1000, "frac_local":0.20 },
       "localK_MKKp": { "Nk_seg": 1000, "frac_local":0.20 },
-      "output_suffix": "0.084"
+      "output_suffix": "-0.012"
     },
    
     "test_dos": {
       "model": "sk",
-      "Dfield_eV": 0.012,
+      "Dfield_eV": -0.012,
       "kmesh": { "type": "BZ", "Nk": 400, "dk_frac": 0.004},
       "T_K": 6.0,
-      "dos": {"e_low": 0.5000, "e_high": 1.1300, "num_e": 6301, "eta": 0.0003}
+      "dos": {"e_low": 0.5000, "e_high": 0.8000, "num_e": 1501, "eta": 0.001}
     },
    
     "calculate_fermi": {
