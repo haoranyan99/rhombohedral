@@ -25,4 +25,5 @@ function C = eval_all_(par, coef, T, dop, chi_used)
     C.a2 = coef.a2(T,dop);
     C.b2 = coef.b2(T);
     C.c2 = coef.c2(T,dop);
+    C.c2 = 0;
 end
