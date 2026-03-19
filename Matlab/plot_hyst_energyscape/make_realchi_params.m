@@ -13,13 +13,13 @@ function par = make_realchi_params(noAsk)
     par = struct();
 
     % =================== q-point selection ===================
-    par.iq_pick = -133;
-    par.jq_pick = -133;
+    par.iq_pick = -267;
+    par.jq_pick = -267;
 
     % =================== chi -> coefficients =================
-    par.invV       = -10.22;
+    par.invV       = -10.14;
     par.chi_scaler = -500;
-    par.T_target   = 4;          % used only for picking one T from loaded list
+    par.T_target   = 6.5;          % used only for picking one T from loaded list
     par.T_tol      = 1e-8;
 
     % =================== coupling ============================
