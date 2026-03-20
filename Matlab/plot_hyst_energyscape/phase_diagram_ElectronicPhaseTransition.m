@@ -30,6 +30,7 @@ function out = phase_diagram_ElectronicPhaseTransition()
 
     % ---------------- choose folder -----------------
     default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.084";
+    default_root = "/Users/haoranyan/rg_master/data/";
     if ~isfolder(default_root)
         warning("Default folder not found: %s\nFallback to pwd.", default_root);
         default_root = string(pwd);

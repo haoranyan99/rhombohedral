@@ -3,13 +3,26 @@ function plot_dos_and_chi()
 % Key rule: x for chi MUST come from each file HEADER (not folder name).
 % DOS: prefers x from DOS numeric columns; if missing, tries header scalar.
 
+default_root = "/Users/haoranyan/rg_master/data/";
+
 x_mode = pick_xmode_();  % "doping" or "mu"
 fprintf("[x_mode] %s\n", x_mode);
+
+% -----------------------------
+% default iq/jq
+% -----------------------------
+iq0 = -267;
+jq0 = -267;
 
 % =========================
 % 1) DOS file (single)
 % =========================
-[fname, fpath] = uigetfile({'*.txt','DOS data (*.txt)'}, 'Select DOS file');
+start_dos = default_root;
+if ~isfolder(start_dos)
+    start_dos = string(pwd);
+end
+
+[fname, fpath] = uigetfile({'*.txt','DOS data (*.txt)'}, 'Select DOS file', start_dos);
 if isequal(fname,0), return; end
 dos_path = fullfile(fpath, fname);
 [~, dos_base, ~] = fileparts(dos_path);
@@ -33,14 +46,19 @@ DOS   = DOS(m);
 % =========================
 % 2) chi folder (many files)
 % =========================
-chi_root = uigetdir(string(fpath), "Select chi root folder containing chi*.txt (recursive)");
+start_chi = default_root;
+if ~isfolder(start_chi)
+    start_chi = string(fpath);
+end
+
+chi_root = uigetdir(start_chi, "Select chi root folder containing chi*.txt (recursive)");
 if isequal(chi_root,0), return; end
 chi_root = string(chi_root);
 
-answ = inputdlg({'iq','jq'}, 'Pick (iq,jq)', [1 40], {'0','0'});
-if isempty(answ), return; end
-iq_pick = round(str2double(answ{1}));
-jq_pick = round(str2double(answ{2}));
+iq_pick = iq0;
+jq_pick = jq0;
+
+fprintf("[iq,jq] = (%d, %d)\n", iq_pick, jq_pick);
 
 [x_chi, chi_re] = load_chi_vs_headerx_(chi_root, iq_pick, jq_pick, x_mode);
 if isempty(x_chi)

@@ -14,6 +14,7 @@ function coef = make_realchi_coeff(par)
     coef.b2 = @(T) coef.beta(T);
     coef.a2 = @(T,dop) 5.0 / 6.0 * (coef.beta(T).^2) ...
         - a2*(T-Tc)^2 + a2*(Tm-Tc)^2*(dc-dop)/(dc-dm);
+    
 
     coef.eval = @(T,dop,chi_used) eval_all_(par, coef, T, dop, chi_used);
 end
@@ -24,6 +25,6 @@ function C = eval_all_(par, coef, T, dop, chi_used)
     C.b1 = coef.b1(T,dop);
     C.a2 = coef.a2(T,dop);
     C.b2 = coef.b2(T);
-    C.b2 = -5;
+    % C.b2 = -5;
     C.c2 = 1;
 end
