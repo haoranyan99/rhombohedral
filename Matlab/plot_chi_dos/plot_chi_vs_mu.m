@@ -26,7 +26,7 @@ jq0 = -267;
 % -----------------------------
 % choose root folder
 % -----------------------------
-default_root = "/Users/haoranyan/rg_master/data/chi_sk_mu_400/D0.012";
+default_root = "/Users/haoranyan/rg_master/data/";
 % default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.067";
 
 if ~isfolder(default_root)

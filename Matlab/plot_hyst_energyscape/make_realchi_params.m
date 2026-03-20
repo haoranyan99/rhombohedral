@@ -64,6 +64,9 @@ function par = make_realchi_params(noAsk)
     % =========================================================
     par.hyst = struct();
 
+    % scanning direction
+    par.hyst.forward_direction = "ascend";   % "ascend" or "descend"
+
     % --- grid type: choose ONE ---
     par.hyst.grid_mode = "N";        % "N" or "step"
     par.hyst.N         = 200;        % used if grid_mode="N"

@@ -7,7 +7,8 @@ par  = make_realchi_params();
 coef = make_realchi_coeff(par);
 
 % folder
-default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.084";
+% default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.084";
+default_root = "/Users/haoranyan/rg_master/data/";
 if isfield(par,'io') && isfield(par.io,'default_root') && isfolder(par.io.default_root)
     default_root = string(par.io.default_root);
 end

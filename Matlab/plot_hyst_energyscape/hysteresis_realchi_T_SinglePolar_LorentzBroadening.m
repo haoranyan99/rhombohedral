@@ -1,4 +1,4 @@
-function H = hysteresis_realchi_T_SinglePolar_LorentzBroadening()
+ function H = hysteresis_realchi_T_SinglePolar_LorentzBroadening()
 % Hysteresis at ONE temperature using chi*.txt (recursive).
 % IMPORTANT: chi panel + coefficients a are computed from SHIFT-AVERAGED chi:
 %   chi_art(mu) = 0.5*(chi(mu+dmu) + chi(mu-dmu)),
@@ -468,32 +468,69 @@ end
 function [dop_fwd, dop_bwd] = build_hyst_doping_grid_(dop0, hyst)
 % Build hysteresis doping grid from available doping points.
 % Supports:
-%   hyst.grid_mode = "N"   with hyst.N
-%   hyst.grid_mode = "step" with hyst.step
+%   hyst.grid_mode = "N"     with hyst.N
+%   hyst.grid_mode = "step"  with hyst.step
+%
+% New:
+%   hyst.forward_direction = "ascend"  -> forward: min(dop) -> max(dop)
+%   hyst.forward_direction = "descend" -> forward: max(dop) -> min(dop)
+
+dop0 = double(dop0(:));
+dop0 = dop0(isfinite(dop0));
+
+if isempty(dop0)
+    error("build_hyst_doping_grid_: dop0 is empty.");
+end
 
 dmin = min(dop0);
 dmax = max(dop0);
 
 mode = "N";
-if isfield(hyst,"grid_mode"), mode = string(hyst.grid_mode); end
+if isfield(hyst, "grid_mode") && ~isempty(hyst.grid_mode)
+    mode = string(hyst.grid_mode);
+end
 
+direction = "ascend";
+if isfield(hyst, "forward_direction") && ~isempty(hyst.forward_direction)
+    direction = lower(string(hyst.forward_direction));
+end
+
+if ~(direction == "ascend" || direction == "descend")
+    error("hyst.forward_direction must be 'ascend' or 'descend'");
+end
+
+% -------- build base ascending grid first --------
 if mode == "step"
-    step = hyst.step;
+    step = double(hyst.step);
     if ~isfinite(step) || step <= 0
         error("hyst.step must be > 0 when grid_mode='step'");
     end
-    dop_fwd = (dmin:step:dmax).';
-    if abs(dop_fwd(end)-dmax) > 1e-12
-        dop_fwd(end+1,1) = dmax; %#ok<AGROW>
+
+    dop_base = (dmin:step:dmax).';
+    if isempty(dop_base) || abs(dop_base(end) - dmax) > 1e-12
+        dop_base(end+1,1) = dmax; %#ok<AGROW>
     end
-else
-    N = hyst.N;
+
+elseif mode == "N"
+    N = double(hyst.N);
     if ~isfinite(N) || N < 3
         error("hyst.N must be >= 3 when grid_mode='N'");
     end
-    dop_fwd = linspace(dmin, dmax, round(N)).';
+
+    dop_base = linspace(dmin, dmax, round(N)).';
+
+else
+    error("Unsupported hyst.grid_mode. Use 'N' or 'step'.");
 end
 
+% -------- apply forward direction --------
+if direction == "ascend"
+    dop_fwd = dop_base;
+else
+    dop_fwd = flipud(dop_base);
+end
+
+% backward is always reverse of forward
 dop_bwd = flipud(dop_fwd);
 end
 
