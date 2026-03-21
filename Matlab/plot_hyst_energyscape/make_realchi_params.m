@@ -28,20 +28,20 @@ function par = make_realchi_params(noAsk)
 
     % =================== psi window ==========================
     par.psi1_lim = [-12, 12];
-    par.psi2_lim = [-8, 8];
+    par.psi2_lim = [-10, 10];
 
     % =================== doping reference ====================
     par.dop_span = 1.0;
 
     % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
     % =================== T = @(dop) -A * dop^2 + C for lattice mode boundary (A,C detemined in coeff.m) ====================
-    par.Lat_pt1 = [-3, 5];
-    par.Lat_pt2 = [-2.7, 8];
+    par.Lat_pt1 = [-3.5, 0];
+    par.Lat_pt2 = [-2.5, 10];
     
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
-    par.Lat_Tc = 10;
-    par.Lat_alpha = 5e-3;
+    par.Lat_Tc = 0;
+    par.Lat_alpha = 0.1;
     
 
     % =================== artificial magnetic field (meV) =========
