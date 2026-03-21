@@ -33,14 +33,9 @@ function par = make_realchi_params(noAsk)
     % =================== doping reference ====================
     par.dop_span = 1.0;
 
-    % =================== coefficient: a2(T,dop) ==============
-    par.Xboundary_dmin = 0.83;
-    par.Xboundary_Tmin = 0.9; 
-    par.Xboundary_dc = 2.0;
-    par.Xboundary_Tc = 10;
-    par.Xboundary_a2_T = 1e-3; 
-    par.Xboundary_Tslope = 0.25;
-    par.Xboundary_beta0 = -3;
+    % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
+    par.Lat_pt1 = [-3, 5];
+    par.Lat_pt2 = [-2.8, 10];
 
 
     % =================== artificial magnetic field (meV) =========

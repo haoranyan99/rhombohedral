@@ -7,7 +7,7 @@ function interactive_landau_preview_UI()
     % ===================== defaults =====================
     p = struct();
     p.a1 = 0.2;   p.b1 = 1.0;
-    p.a2 = 0.5;   p.b2 = -3.0;  p.c2 = 1.0;
+    p.a2 = 7.21;   p.b2 = -3.0;  p.c2 = 1.0;
 
     view = struct();
     view.psi_max  = 20.0;
@@ -19,9 +19,9 @@ function interactive_landau_preview_UI()
     r = struct();
     r.a1 = [-50, 50];
     r.b1 = [  0, 20];     % usually positive for stability
-    r.a2 = [-50, 50];
-    r.b2 = [-50, 50];     % can be negative to create double well
-    r.c2 = [  0, 20];     % usually positive
+    r.a2 = [-30, 30];
+    r.b2 = [-10, 10];     % can be negative to create double well
+    r.c2 = [ -10,  10];     % usually positive
 
     % ===================== UI layout =====================
     fig = uifigure('Name','Landau Preview (a1,b1,a2,b2,c2)','Position',[100 80 1100 620]);

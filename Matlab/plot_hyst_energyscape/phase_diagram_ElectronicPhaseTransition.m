@@ -1,11 +1,11 @@
 function out = phase_diagram_ElectronicPhaseTransition()
 % phase_diagram_12vs34_realchi
 % Two-color phase diagram:
-%   - phase12 (original phase 1 or 2) => one color
-%   - phase34 (original phase 3 or 4) => one color
-%   - invalid/missing => one color
+%   - phase12 (original phase 1 or 2) => red
+%   - phase34 (original phase 3 or 4) => blue
+%   - invalid/missing => not shown in colorbar
 %
-% Phase classification is still by coefficients:
+% Phase classification:
 %   a2crit = (5/6)*b2^2
 %   if a2 >= a2crit:
 %       a1<0 => phase4 else phase1
@@ -18,18 +18,15 @@ function out = phase_diagram_ElectronicPhaseTransition()
 %
 % Internal coef.eval ALWAYS uses doping from HEADER:
 %   C = coef.eval(T_header, doping_header, chi_used)
-%
-% Plot:
-%   - aligned blocks by true coordinate edges
-%   - ONLY draw boundary between phase12 and phase34: a1 = 0
-%   - datatip shows (T, folder U, group, original phase, header doping, a1,a2,b2,a2crit)
 
     % -------------------- params / coeff --------------------
     par  = make_realchi_params();
     coef = make_realchi_coeff(par);
 
+    % -------------------- style --------------------
+    FS = 18;
+
     % ---------------- choose folder -----------------
-    default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.084";
     default_root = "/Users/haoranyan/rg_master/data/";
     if ~isfolder(default_root)
         warning("Default folder not found: %s\nFallback to pwd.", default_root);
@@ -125,10 +122,10 @@ function out = phase_diagram_ElectronicPhaseTransition()
                     ph_row(iU) = 0;
                 else
                     if a2 >= a2crit
-                        ph_row(iU) = 1;              % phase1
+                        ph_row(iU) = 1;                % phase1
                         if a1 < 0, ph_row(iU) = 4; end % phase4
                     else
-                        ph_row(iU) = 2;              % phase2
+                        ph_row(iU) = 2;                % phase2
                         if a1 < 0, ph_row(iU) = 3; end % phase3
                     end
                 end
@@ -168,10 +165,10 @@ function out = phase_diagram_ElectronicPhaseTransition()
                 crit_map(iT,iU) = a2crit;
 
                 if ~isfinite(a1) || ~isfinite(a2) || ~isfinite(b2) || ~isfinite(a2crit)
-                    phase_map(iT,iU) = 1;
+                    phase_map(iT,iU) = 0;
                 else
                     if a2 >= a2crit
-                        phase_map(iT,iU) = 0;      % phase1
+                        phase_map(iT,iU) = 1;      % phase1
                         if a1 < 0, phase_map(iT,iU) = 4; end
                     else
                         phase_map(iT,iU) = 2;      % phase2
@@ -183,18 +180,18 @@ function out = phase_diagram_ElectronicPhaseTransition()
     end
 
     % ---------------- compress for display only: phase12 vs phase34 ----------------
-    phase2_map = zeros(size(phase_map));
+    phase2_map = nan(size(phase_map));
     phase2_map(phase_map==1 | phase_map==2) = 1; % phase12
     phase2_map(phase_map==3 | phase_map==4) = 2; % phase34
 
-    % ---------------- plot (aligned blocks + boundary a1=0 + datatip) ----------------
+    % ---------------- plot ----------------
     fig = figure('Color','w','Name','Phase diagram (phase12 vs phase34)');
-    ax = axes(fig); %#ok<LAXES>
+    ax = axes(fig);
 
-    c_invalid = [0.25 0.08 0.35];
-    c34 = [0.20 0.55 0.95];
-    c12 = [0.85 0.20 0.15];
-    cmap2 = [c_invalid; c12; c34];
+    % colors: only two phases shown in colorbar
+    c12 = [0.85 0.20 0.15];       % red
+    c34 = [0.20 0.45 0.95];       % blue
+    cmap2 = [c12; c34];
 
     U_edges = centers_to_edges_(U_list);
     T_edges = centers_to_edges_(T_list);
@@ -203,74 +200,57 @@ function out = phase_diagram_ElectronicPhaseTransition()
     Cgrid(1:end-1, 1:end-1) = phase2_map;
 
     [UUe, TTe] = meshgrid(U_edges, T_edges);
-    surface(ax, UUe, TTe, zeros(size(UUe)), Cgrid, 'EdgeColor','none', 'FaceColor','flat');
+    surface(ax, UUe, TTe, zeros(size(UUe)), Cgrid, ...
+        'EdgeColor','none', 'FaceColor','flat');
     view(ax, 2);
     axis(ax, 'tight');
     set(ax,'YDir','normal');
 
     colormap(ax, cmap2);
-    caxis(ax, [0 2]);
+    caxis(ax, [1 2]);
 
-    % ticks: AUTO (as you requested)
     ax.XTickMode = 'auto';
     ax.YTickMode = 'auto';
 
     if strcmpi(u_tag,'doping')
-        xlabel(ax, '$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$','Interpreter','latex');
+        xlabel(ax, '$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$', ...
+            'Interpreter','latex','FontSize',FS);
         xtickformat(ax,'%.4f');
     else
-        xlabel(ax, '$\mu\ (\mathrm{eV})$','Interpreter','latex');
+        xlabel(ax, '$\mu\ (\mathrm{eV})$', ...
+            'Interpreter','latex','FontSize',FS);
         xtickformat(ax,'%.6g');
     end
-    ylabel(ax, '$T$','Interpreter','latex');
+    ylabel(ax, '$T$', 'Interpreter','latex','FontSize',FS);
 
-    title(ax, sprintf('Phase(1/2) vs Phase(3/4) | q=(%d,%d) | x=%s(folder)', ...
-        iq_pick, jq_pick, u_tag), 'Interpreter','latex','FontWeight','normal');
+    title(ax, 'Electronic phase transition', ...
+        'Interpreter','latex','FontWeight','normal','FontSize',FS);
 
-    set(ax,'FontSize',par.fontSize,'TickLabelInterpreter','latex', ...
-        'LineWidth',1,'TickDir','out','Box','on');
+    set(ax, 'FontSize',FS, ...
+        'TickLabelInterpreter','latex', ...
+        'LineWidth',1, ...
+        'TickDir','out', ...
+        'Box','on');
 
-    % boundary: a1 = 0
-    hold(ax,'on');
-    [UUc, TTc] = meshgrid(U_list, T_list);
-    A1 = a1_map; A1(~isfinite(A1)) = NaN;
-    if any(isfinite(A1(:)))
-        contour(ax, UUc, TTc, A1, [0 0], 'k-', 'LineWidth', 1.6);
-    end
-    hold(ax,'off');
-
-    % legend (no colorbar)
-    hold(ax,'on');
-    h12 = plot(ax, nan,nan,'s','MarkerFaceColor',c12,'MarkerEdgeColor','none','MarkerSize',10);
-    h34 = plot(ax, nan,nan,'s','MarkerFaceColor',c34,'MarkerEdgeColor','none','MarkerSize',10);
-    hb  = plot(ax, nan,nan,'k-','LineWidth',1.6);
-    h0  = plot(ax, nan,nan,'s','MarkerFaceColor',c_invalid,'MarkerEdgeColor','none','MarkerSize',10);
-    hold(ax,'off');
-
-    legend([h12 h34 hb h0], ...
-        {'phase12: original phase 1 or 2 (a1 \ge 0)', ...
-         'phase34: original phase 3 or 4 (a1 < 0)', ...
-         'boundary: a1 = 0', ...
-         'invalid / missing'}, ...
-        'Interpreter','tex','Location','eastoutside');
+    % colorbar: only red/blue two phases
+    cb = colorbar(ax, 'eastoutside');
+    cb.Ticks = [1 2];
+    cb.TickLabels = {'phase12', 'phase34'};
+    cb.FontSize = FS;
+    cb.TickLabelInterpreter = 'none';
+    cb.Label.String = 'Phase';
+    cb.Label.FontSize = FS;
+    cb.Label.Interpreter = 'none';
 
     % datatip
     dcm = datacursormode(fig);
     set(dcm, 'Enable','on', 'SnapToDataVertex','off', 'DisplayStyle','datatip');
     set(dcm, 'UpdateFcn', @tip_cb_);
 
-    % save
-    out_dir = fullfile(root, "..", "plot");
-    if ~exist(out_dir,"dir"), mkdir(out_dir); end
-    out_png = fullfile(out_dir, sprintf("phase_12vs34_iq%d_jq%d_x%s.png", ...
-        iq_pick, jq_pick, u_tag));
-    exportgraphics(fig, out_png, 'Resolution', 300);
-    fprintf("Saved phase: %s\n", out_png);
-
     % output struct
     out = struct();
     out.phase_map   = phase_map;    % original 0..4
-    out.phase2_map  = phase2_map;   % display 0..2
+    out.phase2_map  = phase2_map;   % display 1..2 / NaN
     out.T_list      = T_list;
     out.U_list      = U_list;
     out.u_tag       = u_tag;
@@ -284,7 +264,6 @@ function out = phase_diagram_ElectronicPhaseTransition()
     out.Ufolder_map = Ufolder_map;
     out.iq_pick     = iq_pick;
     out.jq_pick     = jq_pick;
-    out.png         = out_png;
 
     % ===================== nested: datatip callback =====================
     function txt = tip_cb_(~, evt)
@@ -299,8 +278,8 @@ function out = phase_diagram_ElectronicPhaseTransition()
             return;
         end
 
-        ph0  = phase_map(it, iu);      % original
-        grp  = phase2_map(it, iu);     % 0/1/2
+        ph0  = phase_map(it, iu);
+        grp  = phase2_map(it, iu);
         T0   = T_list(it);
         U0   = U_list(iu);
         dop0 = dop_map(it, iu);
@@ -317,8 +296,8 @@ function out = phase_diagram_ElectronicPhaseTransition()
         end
 
         gname = "invalid";
-        if grp==1, gname="phase12"; end
-        if grp==2, gname="phase34"; end
+        if isequal(grp,1), gname="phase12"; end
+        if isequal(grp,2), gname="phase34"; end
 
         txt = {
             sprintf('T = %.6g K', T0)
@@ -326,7 +305,7 @@ function out = phase_diagram_ElectronicPhaseTransition()
             sprintf('group = %s', gname)
             sprintf('phase(original) = %d (%s)', ph0, phase_name1234_(ph0))
             sprintf('doping(header) = %.6g', dop0)
-            sprintf('a1 = %.6g  (boundary a1=0)', a10)
+            sprintf('a1 = %.6g', a10)
             sprintf('a2 = %.6g', a20)
             sprintf('b2 = %.6g', b20)
             sprintf('a2crit = %.6g', cr0)
@@ -561,7 +540,6 @@ function [Tfolder, Ufolder, ukind, uval] = parse_T_and_U_from_path_(fpath)
 end
 
 function u = quantize_U_(ukind, uval)
-    % keep your convention: doping rounded to 4 decimals, mu keep high precision
     if ukind == "doping"
         u = round(uval, 4);
     else

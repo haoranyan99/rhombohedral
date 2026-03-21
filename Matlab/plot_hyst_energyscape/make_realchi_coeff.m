@@ -1,20 +1,21 @@
 function coef = make_realchi_coeff(par)
-% Return coefficient evaluator using ONLY (T, dop, chi_used) and par.
-    Tc = par.Xboundary_Tc;
-    dc = par.Xboundary_dc;
-    Tm = par.Xboundary_Tmin;
-    dm = par.Xboundary_dmin;
-    a2 = par.Xboundary_a2_T;
 
     coef = struct();
-    coef.beta = @(T) par.Xboundary_Tslope.*T + par.Xboundary_beta0; 
+    c2 = 1; % c2 > 0 to ensure F>0 when X is large
 
-    coef.b1 = @(T,dop) 1;
-    coef.c2 = @(T,dop) 1;
-    coef.b2 = @(T) coef.beta(T);
-    coef.a2 = @(T,dop) 5.0 / 6.0 * (coef.beta(T).^2) ...
-        - a2*(T-Tc)^2 + a2*(Tm-Tc)^2*(dc-dop)/(dc-dm);
+    % new def: T = A * dop^2 + Tc for lattice phase boundary
+    dop1 = par.Lat_pt1(1);
+    T1 = par.Lat_pt1(2);
+    dop2 = par.Lat_pt2(1);
+    T2 = par.Lat_pt2(2);
+    A = (T2 - T1) / (dop2*dop2 - dop1*dop1);
+    Tc = (T1*dop2*dop2 - T2*dop1*dop1) / (dop2*dop2 - dop1*dop1);
     
+    % a2 = alpha * (T - Tc)
+    alpha = 5 / (6 * A * c2);
+    coef.a2 = @(T) alpha * (T-Tc);
+    coef.b2 = @(dop) abs(dop);
+    coef.c2 = c2;
 
     coef.eval = @(T,dop,chi_used) eval_all_(par, coef, T, dop, chi_used);
 end
@@ -22,9 +23,9 @@ end
 function C = eval_all_(par, coef, T, dop, chi_used)
     C = struct();
     C.a1 = par.chi_scaler * (par.invV + abs(chi_used));
-    C.b1 = coef.b1(T,dop);
-    C.a2 = coef.a2(T,dop);
-    C.b2 = coef.b2(T);
+    C.b1 = 1;
+    C.a2 = coef.a2(T);
+    C.b2 = coef.b2(dop);
     % C.b2 = -5;
-    C.c2 = 1;
+    C.c2 = coef.c2;
 end
