@@ -9,7 +9,7 @@ function H = hysteresis_realchi_T_SinglePolar2()
     coef = make_realchi_coeff(par);
 
     % ---------------- choose folder -----------------
-    default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.067";
+    default_root = "E:\rg_master\data";
     if ~isfolder(default_root)
         warning("Default folder not found: %s\nFallback to pwd.", default_root);
         default_root = string(pwd);

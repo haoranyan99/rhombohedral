@@ -17,7 +17,7 @@ coef = make_realchi_coeff(par);
 
 % ---------------- choose folder -----------------
 % default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.084\polar_meV0.000";
-default_root = "/Users/haoranyan/rg_master/data/";
+default_root = "E:\rg_master\data";
 if ~isfolder(default_root)
     default_root = string(pwd);
 end

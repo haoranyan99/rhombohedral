@@ -17,7 +17,7 @@ function par = make_realchi_params(noAsk)
     par.jq_pick = -267;
 
     % =================== chi -> coefficients =================
-    par.invV       = -10.14;
+    par.invV       = -10.15;
     par.chi_scaler = -500;
     par.T_target   = 6.5;          % used only for picking one T from loaded list
     par.T_tol      = 1e-8;
@@ -41,17 +41,17 @@ function par = make_realchi_params(noAsk)
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
     par.Lat_Tc = 0;
-    par.Lat_alpha = 0.1;
+    par.Lat_alpha = 0.5;
     
 
     % =================== artificial magnetic field (meV) =========
-    par.artificial_polar = 0; 
+    par.artificial_polar = 8; 
 
     % =========================================================
     % =================== IO + FILTERS ========================
     % =========================================================
     par.io = struct();
-    par.io.default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\";
+    par.io.default_root = "E:\rg_master\data";
 
     % -------- NEW: range filters --------
     % Temperature range is parsed from folder name (preferred).

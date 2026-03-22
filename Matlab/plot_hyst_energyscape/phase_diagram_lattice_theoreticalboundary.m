@@ -1,4 +1,4 @@
-function out = phase_diagram_lattice_manual_range()
+function out = phase_diagram_lattice_theoreticalboundary()
 % phase_diagram_lattice_manual_range
 % Lattice-only phase diagram with manual doping/T range.
 %
@@ -99,7 +99,7 @@ function out = phase_diagram_lattice_manual_range()
 
         cb = colorbar(ax);
         cb.Ticks = [1.25, 1.75];
-        cb.TickLabels = {'\Delta \ge 0', '\Delta < 0'};
+        cb.TickLabels = {'on', 'off'};
         cb.FontSize = fs;
     end
 

@@ -8,8 +8,8 @@ out_png_list = strings(0);
 % ==========================
 % USER SETTINGS
 % ==========================
-start_dir = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\";
-mu_shift_meV = 1;     % meV 
+start_dir = "E:\rg_master\data";
+mu_shift_meV = 4;     % meV 
 overlay_original = true;    
 save_png = false;        % optional
 FS = 14;
