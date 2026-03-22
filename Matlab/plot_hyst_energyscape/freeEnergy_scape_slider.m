@@ -3,7 +3,7 @@ function freeEnergy_scape_slider()
 % Depends on your existing:
 %   make_realchi_params, make_realchi_coeff, free_energy, minimize_free_energy
 
-par  = make_realchi_params();
+par  = make_realchi_params(true);
 coef = make_realchi_coeff(par);
 
 % folder
