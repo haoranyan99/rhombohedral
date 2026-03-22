@@ -3,7 +3,7 @@ function out = phase_diagram_LatticePhaseTransition()
 % Grouped phase map:
 %   groupA = phases {1,4}  (same color)
 %   groupB = phases {2,3}  (same color)
-%   invalid/missing = 0
+%   invalid/missing = 0  
 %
 % Classification (same as your 1-4 logic):
 %   a2crit = (5/6) * b2^2
@@ -20,7 +20,7 @@ function out = phase_diagram_LatticePhaseTransition()
 %   - make_realchi_params()
 %   - make_realchi_coeff(par): coef.eval(T, doping, chi)->a1,b1,a2,b2,c2
 %   - load_chi_grid_folderUI_debug_() and its helper subfunctions
-%     (copied from your previous script)
+%     (copied from your previous script) 
 
     % -------------------- params / coeff --------------------
     par  = make_realchi_params();
