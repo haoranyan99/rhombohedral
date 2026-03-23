@@ -41,7 +41,7 @@ function par = make_realchi_params(noAsk)
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
     par.Lat_Tc = 0;
-    par.Lat_alpha = 0.1;
+    par.Lat_alpha = 0.2;
     
 
     % =================== artificial magnetic field (meV) =========

@@ -19,7 +19,7 @@ function coef = make_realchi_coeff(par)
     Tc = par.Lat_Tc;
 
     coef.a2 = @(T) alpha * (T-Tc);
-    coef.b2 = @(dop) sqrt(max(0, 1.2 * c2 * alpha * (-A * dop * dop + C - Tc)));
+    coef.b2 = @(dop) -sqrt(max(0, 1.2 * c2 * alpha * (-A * dop * dop + C - Tc)));
     coef.c2 = c2;
 
     coef.eval = @(T,dop,chi_used) eval_all_(par, coef, T, dop, chi_used);

@@ -30,6 +30,7 @@ out_png = "";
 % choose root directory
 % -----------------------------
 start_dir = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\fermi_sk_mu_200\D0.067\";
+start_dir = "/Users/haoranyan/rg_master/data/";
 root_dir = uigetdir(start_dir, "Select root directory like data/fermiXXX/D0.067");
 if isequal(root_dir,0)
     error("No directory selected.");

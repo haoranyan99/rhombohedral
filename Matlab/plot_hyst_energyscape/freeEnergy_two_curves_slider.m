@@ -1,12 +1,12 @@
 function freeEnergy_two_curves_fixedT_alpha_slider()
 % freeEnergy_two_curves_fixedT_alpha_slider
 %
-% UI for plotting only two 1D free-energy curves:
+% UI for plotting:
 %   1) electronic free energy F_psi(psi1)
-%   2) lattice   free energy F_X(psi2)
+%   2) lattice free energy    F_X(psi2)
 %
 % Controls:
-%   - fixed T (numeric edit field)
+%   - fixed T input
 %   - alpha slider
 %   - doping(folder) or mu(folder) slider
 %   - iq/jq selection
@@ -24,7 +24,7 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
     par_base = make_realchi_params(true);
 
     % ---- UI defaults ----
-    T_fixed_default = 4.0;
+    T_fixed_default = 6.5;
 
     alpha_min = 0.01;
     alpha_max = max(5.0, 2.0 * par_base.Lat_alpha);
@@ -65,7 +65,6 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
         error('No valid chi grid found under selected folder.');
     end
 
-    % initial fixed-T row
     [~, it0] = min(abs(T_list - T_fixed_default));
     iu0 = nearest_valid_in_row_(chi_map, it0, 1);
     if ~isfinite(chi_map(it0, iu0))
@@ -77,17 +76,17 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
     % =========================================================
     fig = uifigure( ...
         'Name', sprintf('Two Free Energies | fixed T + alpha slider (%s)', u_tag), ...
-        'Position', [80 60 1180 690]);
+        'Position', [80 60 1220 720]);
 
     % ---- axes ----
-    axPsi = uiaxes(fig, 'Position', [60 275 470 340], 'FontSize', 15);
+    axPsi = uiaxes(fig, 'Position', [60 300 480 340], 'FontSize', 15);
     axPsi.TickLabelInterpreter = 'latex';
     xlabel(axPsi, '$\psi_1$', 'Interpreter', 'latex');
     ylabel(axPsi, '$F_{\psi}(\psi_1)$', 'Interpreter', 'latex');
     title(axPsi, '$F_{\psi}=\frac12 a_1\psi_1^2+\frac{1}{4!}b_1\psi_1^4$', ...
         'Interpreter', 'latex', 'FontWeight', 'normal');
 
-    axX = uiaxes(fig, 'Position', [650 275 470 340], 'FontSize', 15);
+    axX = uiaxes(fig, 'Position', [660 300 480 340], 'FontSize', 15);
     axX.TickLabelInterpreter = 'latex';
     xlabel(axX, '$\psi_2$', 'Interpreter', 'latex');
     ylabel(axX, '$F_{X}(\psi_2)$', 'Interpreter', 'latex');
@@ -96,14 +95,14 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
 
     % ---- parameter display ----
     coeff_box = uitextarea(fig, ...
-        'Position', [60 25 1060 190], ...
+        'Position', [60 25 1080 240], ...
         'Editable', 'off', ...
         'FontSize', 15);
 
     % =========================================================
     % 5. controls
     % =========================================================
-    y_top = 235;
+    y_top = 255;
     dy    = 55;
 
     % ---- fixed T input ----
@@ -113,12 +112,12 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
         'FontSize', 15);
 
     T_input = uieditfield(fig, 'numeric', ...
-        'Position', [130 y_top+dy-12 110 30], ...
+        'Position', [130 y_top+dy-12 120 30], ...
         'Value', T_list(it0), ...
         'FontSize', 15);
 
     T_text = uilabel(fig, ...
-        'Position', [260 y_top+dy-12 320 24], ...
+        'Position', [270 y_top+dy-12 340 24], ...
         'Text', '', ...
         'FontSize', 15);
 
@@ -129,14 +128,14 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
         'FontSize', 15);
 
     alpha_slider = uislider(fig, ...
-        'Position', [130 y_top 360 3], ...
+        'Position', [130 y_top 380 3], ...
         'Limits', [alpha_min, alpha_max], ...
         'Value', alpha0);
     alpha_slider.MajorTicks = [];
     alpha_slider.MinorTicks = [];
 
     alpha_text = uilabel(fig, ...
-        'Position', [510 y_top-14 260 24], ...
+        'Position', [530 y_top-14 280 24], ...
         'Text', '', ...
         'FontSize', 15);
 
@@ -147,32 +146,32 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
         'FontSize', 15);
 
     U_slider = uislider(fig, ...
-        'Position', [130 y_top-dy 360 3], ...
+        'Position', [130 y_top-dy 380 3], ...
         'Limits', [1, max(1, numel(U_list))], ...
         'Value', iu0);
     U_slider.MajorTicks = [];
     U_slider.MinorTicks = [];
 
     U_text = uilabel(fig, ...
-        'Position', [510 y_top-dy-14 350 24], ...
+        'Position', [530 y_top-dy-14 360 24], ...
         'Text', '', ...
         'FontSize', 15);
 
     % ---- iq jq ----
-    uilabel(fig, 'Position', [910 235 30 22], 'Text', 'iq', 'FontSize', 15);
+    uilabel(fig, 'Position', [930 255 30 22], 'Text', 'iq', 'FontSize', 15);
     iq_input = uieditfield(fig, 'numeric', ...
-        'Position', [900 205 70 30], ...
+        'Position', [920 225 80 30], ...
         'Value', par_base.iq_pick, ...
         'FontSize', 15);
 
-    uilabel(fig, 'Position', [990 235 30 22], 'Text', 'jq', 'FontSize', 15);
+    uilabel(fig, 'Position', [1020 255 30 22], 'Text', 'jq', 'FontSize', 15);
     jq_input = uieditfield(fig, 'numeric', ...
-        'Position', [980 205 70 30], ...
+        'Position', [1010 225 80 30], ...
         'Value', par_base.jq_pick, ...
         'FontSize', 15);
 
     apply_button = uibutton(fig, 'push', ...
-        'Position', [900 160 150 32], ...
+        'Position', [920 180 170 34], ...
         'Text', 'Apply iq/jq', ...
         'FontSize', 15);
 
@@ -210,11 +209,9 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
     function update_()
         refresh_labels_();
 
-        % ---- choose nearest available T row ----
         [~, it] = min(abs(T_list - T_input.Value));
         iu = clamp_(round(U_slider.Value), numel(U_list));
 
-        % ---- move to nearest valid point in this T row if needed ----
         if ~isfinite(chi_map(it, iu))
             iu = nearest_valid_in_row_(chi_map, it, iu);
             U_slider.Value = iu;
@@ -226,7 +223,6 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
             end
         end
 
-        % ---- current values ----
         T_now = T_list(it);
         u_now = U_list(iu);
         chi_used = chi_map(it, iu);
@@ -234,12 +230,10 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
         mu_folder_value = muf_map(it, iu);
         alpha_now = alpha_slider.Value;
 
-        % ---- rebuild coeff with current alpha ----
         par_local = par_base;
         par_local.Lat_alpha = alpha_now;
         coef_local = make_realchi_coeff(par_local);
 
-        % ---- evaluate coefficients ----
         C = coef_local.eval(T_now, dop_eval, chi_used);
 
         draw_curves_(par_local, T_now, u_now, chi_used, dop_eval, mu_folder_value, C, alpha_now);
@@ -257,44 +251,66 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
 
         % ---- x ranges ----
         if isfield(par_local, 'psi1_lim') && numel(par_local.psi1_lim)==2
-            x1 = linspace(par_local.psi1_lim(1), par_local.psi1_lim(2), 1201);
+            x1 = linspace(par_local.psi1_lim(1), par_local.psi1_lim(2), 2001);
             xlim(axPsi, par_local.psi1_lim);
         else
-            x1 = linspace(-10, 10, 1201);
+            x1 = linspace(-10, 10, 2001);
             xlim(axPsi, [x1(1), x1(end)]);
         end
 
         if isfield(par_local, 'psi2_lim') && numel(par_local.psi2_lim)==2
-            x2 = linspace(par_local.psi2_lim(1), par_local.psi2_lim(2), 1201);
+            x2 = linspace(par_local.psi2_lim(1), par_local.psi2_lim(2), 4001);
             xlim(axX, par_local.psi2_lim);
         else
-            x2 = linspace(-10, 30, 1201);
+            x2 = linspace(-20, 20, 4001);
             xlim(axX, [x2(1), x2(end)]);
         end
 
         y1 = Fpsi(x1);
         y2 = FX(x2);
 
-        % ---- plot electronic ----
+        % ---- electronic plot ----
         plot(axPsi, x1, y1, 'LineWidth', 2);
         grid(axPsi, 'on');
         box(axPsi, 'on');
-
         [~, idx1] = min(y1);
         hold(axPsi, 'on');
         plot(axPsi, x1(idx1), y1(idx1), 'o', ...
-            'MarkerSize', 7, 'LineWidth', 1.5);
+            'MarkerSize', 7, 'LineWidth', 1.5, 'MarkerFaceColor', 'none');
+        text(axPsi, x1(idx1), y1(idx1), ...
+            sprintf('  min: (%.4g, %.4g)', x1(idx1), y1(idx1)), ...
+            'FontSize', 12, 'VerticalAlignment', 'bottom', 'Interpreter', 'none');
         hold(axPsi, 'off');
 
-        % ---- plot lattice ----
+        % ---- lattice plot with ALL local minima ----
         plot(axX, x2, y2, 'LineWidth', 2);
         grid(axX, 'on');
         box(axX, 'on');
-
-        [~, idx2] = min(y2);
         hold(axX, 'on');
-        plot(axX, x2(idx2), y2(idx2), 'o', ...
-            'MarkerSize', 7, 'LineWidth', 1.5);
+
+        imin = find_local_minima_(y2);
+        if isempty(imin)
+            [~, idx0] = min(y2);
+            imin = idx0;
+        end
+
+        min_pos = x2(imin);
+        min_val = y2(imin);
+
+        % sort by position
+        [min_pos, order] = sort(min_pos);
+        min_val = min_val(order);
+        imin = imin(order);
+
+        plot(axX, min_pos, min_val, 'o', ...
+            'MarkerSize', 7, 'LineWidth', 1.5, 'MarkerFaceColor', 'none');
+
+        for k = 1:numel(min_pos)
+            text(axX, min_pos(k), min_val(k), ...
+                sprintf('  min%d: (%.4g, %.4g)', k, min_pos(k), min_val(k)), ...
+                'FontSize', 12, 'VerticalAlignment', 'bottom', 'Interpreter', 'none');
+        end
+
         hold(axX, 'off');
 
         % ---- parameter box ----
@@ -322,7 +338,13 @@ function freeEnergy_two_curves_fixedT_alpha_slider()
             sprintf('c2 = %.12g', C.c2)
             sprintf('delta = %.12g', delta_now)
             'delta = 5/6*b2^2 - a2*c2'
+            'lattice minima:'
         }];
+
+        for k = 1:numel(min_pos)
+            lines{end+1} = sprintf('  min %d: psi2 = %.12g,  F = %.12g', ...
+                k, min_pos(k), min_val(k));
+        end
 
         if strcmpi(u_tag, 'mu') && isfinite(mu_folder_value)
             lines{end+1} = sprintf('mu(folder map) = %.12g', mu_folder_value);
@@ -629,12 +651,9 @@ end
 
 function C = detect_cols_(M)
     ncol = size(M,2);
-
-    % default: iq jq ... Re in col 5
     C = struct('iq', 1, 'jq', 2, 'Re', 5);
 
     if ncol >= 8
-        % format with leading index
         C.iq = 2;
         C.jq = 3;
         C.Re = 6;
@@ -662,4 +681,30 @@ end
 
 function i = clamp_(i, N)
     i = max(1, min(N, i));
+end
+
+function imin = find_local_minima_(y)
+    y = y(:);
+    n = numel(y);
+    imin = [];
+
+    if n < 3
+        return;
+    end
+
+    for i = 2:n-1
+        if y(i) <= y(i-1) && y(i) <= y(i+1) && ...
+           (y(i) < y(i-1) || y(i) < y(i+1))
+            imin(end+1) = i; %#ok<AGROW>
+        end
+    end
+
+    if y(1) < y(2)
+        imin = [1, imin];
+    end
+    if y(end) < y(end-1)
+        imin = [imin, n];
+    end
+
+    imin = unique(imin);
 end
