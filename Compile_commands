@@ -94,20 +94,6 @@ mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
   Test/test_find_EF_mpi.cpp \
   -o test_find_EF_mpi
 
-# test_RG_fermi_patch
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_RG_fermi_patch.cpp \
-  -o test_RG_fermi_patch
-
-# test_chi
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_chi.cpp \
-  -o test_chi
-
 # calculate_chi (MPI)
 mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
   -I. -I./include -I./include/eigen-3.4.0 \

@@ -13,12 +13,12 @@ function par = make_realchi_params(noAsk)
     par = struct();
 
     % =================== q-point selection ===================
-    par.iq_pick = -267;
-    par.jq_pick = -267;
+    par.iq_pick = 1;
+    par.jq_pick = 1;
 
     % =================== chi -> coefficients =================
-    par.invV       = -10.14;
-    par.chi_scaler = -500;
+    par.invV       = 12.27;
+    par.chi_scaler = 500;
     par.T_target   = 6.5;          % used only for picking one T from loaded list
     par.T_tol      = 1e-8;
 
@@ -67,6 +67,14 @@ function par = make_realchi_params(noAsk)
 
     % scanning direction
     par.hyst.forward_direction = "ascend";   % "ascend" or "descend"
+
+    % --- NEW: scan window on doping axis ---------------------
+    % If NaN, use full available doping range from data.
+    % If given, actual scan range will be:
+    %   [max(min(dop0), min(scan_start,scan_end)), ...
+    %    min(max(dop0), max(scan_start,scan_end))]
+    par.hyst.scan_start = -2.5;
+    par.hyst.scan_end   = 0;
 
     % --- grid type: choose ONE ---
     par.hyst.grid_mode = "N";        % "N" or "step"

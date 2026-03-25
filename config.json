@@ -22,18 +22,18 @@
       "model": "sk",
       "Dfield_eV": -0.012,
       "kmesh": { "type": "BZ", "Nk": 400, "dk_frac": 0.004},
-      "T_K": 6.0,
-      "dos": {"e_low": 0.5000, "e_high": 0.8000, "num_e": 1501, "eta": 0.001}
+      "T_K": 6.5,
+      "dos": {"e_low": 0.4000, "e_high": 0.8000, "num_e": 2001, "eta": 0.001}
     },
    
     "calculate_fermi": {
       "model": "sk",     
       "mode": "mu",
-      "Dfield_eV": 0.084,
+      "Dfield_eV": -0.012,
       "kmesh": { "type":"BZ", "Nk":200, "dk_frac": 0.0003},
-      "temperatureList_K": {"min": 0.0, "max": 8.0, "num": 9}, 
+      "temperatureList_K": {"min": 6.5, "max": 8.0, "num": 1}, 
       "dopingList_10^12cm^-2": {"min": 0, "max": 1, "num": 11},
-      "muList_eV": {"min": 0.5800, "max": 0.8200, "num": 481},
+      "muList_eV": {"min": 0.5000, "max": 0.8000, "num": 301},
       "output_suffix": "200_loose"
     },
    
@@ -41,16 +41,16 @@
       "model": "sk",
       "mode": "mu",
       "boundary": "periodic",
-      "Dfield_eV": 0.012, 
-      "iq_min": -133, "iq_max": -133,
-      "jq_min": -133, "jq_max": -133,
+      "Dfield_eV": -0.012, 
+      "iq_min": -131, "iq_max": -131,
+      "jq_min": -131, "jq_max": -131,
       "eta": 0.000001,
-      "polarList_meV": {"min": 1, "max": 5, "num": 5},      
-      "temperatureList_K": {"min": 0.0, "max": 8.0, "num": 9},
+      "polarList_meV": {"min": 0, "max": 5, "num": 1},      
+      "temperatureList_K": {"min": 6.5, "max": 8.0, "num": 1},
       "dopingList_10^12cm^-2": {"min": 0, "max": 1, "num": 11},
-      "muList_eV": {"min": 0.6200, "max": 0.8200, "num": 401},
-      "fermi_patch_path": "data/fermi_sk_mu_200_hole/D0.067",
-      "output_suffix": "200_hole"
+      "muList_eV": {"min": 0.5000, "max": 0.8000, "num": 301},
+      "fermi_patch_path": "data/fermi_sk_mu_200_loose/D-0.012",
+      "output_suffix": "200_hole_-131"
     }
    
   }

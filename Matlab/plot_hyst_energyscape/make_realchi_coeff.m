@@ -27,7 +27,7 @@ end
 
 function C = eval_all_(par, coef, T, dop, chi_used)
     C = struct();
-    C.a1 = par.chi_scaler * (par.invV + abs(chi_used));
+    C.a1 = par.chi_scaler * (par.invV - abs(chi_used));
     C.b1 = 1;
     C.a2 = coef.a2(T);
     C.b2 = coef.b2(dop);

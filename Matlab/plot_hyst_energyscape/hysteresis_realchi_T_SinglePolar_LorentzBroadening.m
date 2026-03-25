@@ -1,4 +1,4 @@
- function H = hysteresis_realchi_T_SinglePolar_LorentzBroadening()
+function H = hysteresis_realchi_T_SinglePolar_LorentzBroadening()
 % Hysteresis at ONE temperature using chi*.txt (recursive).
 % IMPORTANT: chi panel + coefficients a are computed from SHIFT-AVERAGED chi:
 %   chi_art(mu) = 0.5*(chi(mu+dmu) + chi(mu-dmu)),
@@ -41,6 +41,7 @@ fprintf("T_target=%.6g K, T_tol=%.3g K\n", T_target, T_tol);
 pmev = double(par.artificial_polar);
 dmu  = 0.5 * pmev * 1e-3;   % meV -> eV, then /2
 fprintf("artificial_polar=%.6g meV  => dmu=%.6g eV\n", pmev, dmu);
+
 
 % =========================================================
 % 1) collect baseline curve at this T: (mu_i, doping_i, chi_i)
@@ -107,6 +108,9 @@ chi_of_dop = @(d) interp1(dop_use, chi_use, d, 'linear', 'extrap');
 [dop_fwd, dop_bwd] = build_hyst_doping_grid_(dop_use, par.hyst);
 N = numel(dop_fwd);
 
+fprintf("[scan window] forward: [%.6g, %.6g], backward: [%.6g, %.6g], N=%d\n", ...
+    dop_fwd(1), dop_fwd(end), dop_bwd(1), dop_bwd(end), N);
+
 % ---------------- pack scan/opt from par.min ----
 scan = struct();
 scan.Npsi1 = par.min.Npsi1;
@@ -138,8 +142,8 @@ prev = [par.hyst.psi1_0, par.hyst.psi2_0];
 
 for i = 1:N
     dop = dop_fwd(i);
-    chi_used = chi_of_dop(dop);              % <-- chi_art(dop)
-    C = coef.eval(T_target, dop, chi_used);  % <-- coefficients from chi_art
+    chi_used = chi_of_dop(dop);
+    C = coef.eval(T_target, dop, chi_used);
 
     F = free_energy(C.a1, C.b1, C.a2, C.b2, C.c2, par.lambda);
     mins = find_local_minima_2d_denseSeeds_(F, par.psi1_lim, par.psi2_lim, scan, opt);
@@ -218,8 +222,8 @@ tShort = sprintf('$T=%.6g$, $\\mathrm{artificial\\_polar}=%.6g\\,\\mathrm{meV}$,
 ax1 = nexttile(tl,1);
 plot(ax1, chi_plot_x, chi_plot_y, 'o-','LineWidth',2,'MarkerSize',6);
 grid(ax1,'on'); box(ax1,'on');
-xlabel(ax1,'$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$','Interpreter','latex');
-ylabel(ax1,'$\chi_{\mathrm{art}}=\mathrm{Re}\,\chi$','Interpreter','latex');
+xlabel(ax1,'$\\mathrm{doping}\\ (10^{12}\\ \\mathrm{cm}^{-2})$','Interpreter','latex');
+ylabel(ax1,'$\\chi_{\\mathrm{art}}=\\mathrm{Re}\\,\\chi$','Interpreter','latex');
 title(ax1, tShort, 'Interpreter','latex','FontWeight','normal','FontSize',fs);
 set(ax1,'FontSize',fs,'TickLabelInterpreter','latex','LineWidth',1,'TickDir','out');
 
@@ -228,8 +232,8 @@ ax2 = nexttile(tl,3);
 plot(ax2, dop_fwd, a1_f, 'k-','LineWidth',2);
 grid(ax2,'on'); box(ax2,'on');
 yline(ax2,0,'--','LineWidth',1.2);
-xlabel(ax2,'$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$','Interpreter','latex');
-ylabel(ax2,'$a_1(\chi_{\mathrm{art}})$','Interpreter','latex');
+xlabel(ax2,'$\\mathrm{doping}\\ (10^{12}\\ \\mathrm{cm}^{-2})$','Interpreter','latex');
+ylabel(ax2,'$a_1(\\chi_{\\mathrm{art}})$','Interpreter','latex');
 set(ax2,'FontSize',fs,'TickLabelInterpreter','latex','LineWidth',1,'TickDir','out');
 
 % |psi|
@@ -237,9 +241,9 @@ ax3 = nexttile(tl,2);
 plot(ax3, dop_fwd, psi_f_abs_plot(:,1), '-','LineWidth',2); hold(ax3,'on');
 plot(ax3, dop_bwd, psi_b_abs_plot(:,1), '--','LineWidth',2); hold(ax3,'off');
 grid(ax3,'on'); box(ax3,'on');
-xlabel(ax3,'$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$','Interpreter','latex');
-ylabel(ax3,'$|\psi|$','Interpreter','latex');
-title(ax3,'$|\psi|$ hysteresis','Interpreter','latex','FontWeight','normal','FontSize',fs);
+xlabel(ax3,'$\\mathrm{doping}\\ (10^{12}\\ \\mathrm{cm}^{-2})$','Interpreter','latex');
+ylabel(ax3,'$|\\psi|$','Interpreter','latex');
+title(ax3,'$|\\psi|$ hysteresis','Interpreter','latex','FontWeight','normal','FontSize',fs);
 legend(ax3,{'forward','backward'},'Interpreter','latex','Location','best');
 set(ax3,'FontSize',fs,'TickLabelInterpreter','latex','LineWidth',1,'TickDir','out');
 
@@ -248,7 +252,7 @@ ax4 = nexttile(tl,4);
 plot(ax4, dop_fwd, psi_f_abs_plot(:,2), '-','LineWidth',2); hold(ax4,'on');
 plot(ax4, dop_bwd, psi_b_abs_plot(:,2), '--','LineWidth',2); hold(ax4,'off');
 grid(ax4,'on'); box(ax4,'on');
-xlabel(ax4,'$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$','Interpreter','latex');
+xlabel(ax4,'$\\mathrm{doping}\\ (10^{12}\\ \\mathrm{cm}^{-2})$','Interpreter','latex');
 ylabel(ax4,'$|X|$','Interpreter','latex');
 title(ax4,'$|X|$ hysteresis','Interpreter','latex','FontWeight','normal','FontSize',fs);
 legend(ax4,{'forward','backward'},'Interpreter','latex','Location','best');
@@ -296,6 +300,7 @@ H.chi_bwd = chi_b;
 
 H.png = out_png;
 H.par = par;
+H.gamma_used = gamma_used;
 end
 
 % =====================================================================
@@ -472,8 +477,15 @@ function [dop_fwd, dop_bwd] = build_hyst_doping_grid_(dop0, hyst)
 %   hyst.grid_mode = "step"  with hyst.step
 %
 % New:
-%   hyst.forward_direction = "ascend"  -> forward: min(dop) -> max(dop)
-%   hyst.forward_direction = "descend" -> forward: max(dop) -> min(dop)
+%   hyst.forward_direction = "ascend"  -> forward: low -> high
+%   hyst.forward_direction = "descend" -> forward: high -> low
+%
+% New:
+%   hyst.scan_start / hyst.scan_end
+%   - if NaN: use full available range
+%   - if finite: clip to available data range
+%   - order of start/end does NOT control direction; direction is set by
+%     hyst.forward_direction
 
 dop0 = double(dop0(:));
 dop0 = dop0(isfinite(dop0));
@@ -482,8 +494,8 @@ if isempty(dop0)
     error("build_hyst_doping_grid_: dop0 is empty.");
 end
 
-dmin = min(dop0);
-dmax = max(dop0);
+dmin_all = min(dop0);
+dmax_all = max(dop0);
 
 mode = "N";
 if isfield(hyst, "grid_mode") && ~isempty(hyst.grid_mode)
@@ -499,31 +511,63 @@ if ~(direction == "ascend" || direction == "descend")
     error("hyst.forward_direction must be 'ascend' or 'descend'");
 end
 
-% -------- build base ascending grid first --------
+% ---------- read optional scan window ----------
+scan_start = NaN;
+scan_end   = NaN;
+
+if isfield(hyst, "scan_start") && ~isempty(hyst.scan_start)
+    scan_start = double(hyst.scan_start);
+end
+if isfield(hyst, "scan_end") && ~isempty(hyst.scan_end)
+    scan_end = double(hyst.scan_end);
+end
+
+if ~isfinite(scan_start)
+    scan_start = dmin_all;
+end
+if ~isfinite(scan_end)
+    scan_end = dmax_all;
+end
+
+dlo_req = min(scan_start, scan_end);
+dhi_req = max(scan_start, scan_end);
+
+dlo = max(dmin_all, dlo_req);
+dhi = min(dmax_all, dhi_req);
+
+if ~(isfinite(dlo) && isfinite(dhi) && dhi > dlo)
+    error("Requested scan window [%.6g, %.6g] has no overlap with data range [%.6g, %.6g].", ...
+        dlo_req, dhi_req, dmin_all, dmax_all);
+end
+
+fprintf("[build grid] data range = [%.6g, %.6g], requested = [%.6g, %.6g], used = [%.6g, %.6g]\n", ...
+    dmin_all, dmax_all, dlo_req, dhi_req, dlo, dhi);
+
+% ---------- build base ascending grid first ----------
 if mode == "step"
     step = double(hyst.step);
     if ~isfinite(step) || step <= 0
         error("hyst.step must be > 0 when grid_mode='step'");
     end
 
-    dop_base = (dmin:step:dmax).';
-    if isempty(dop_base) || abs(dop_base(end) - dmax) > 1e-12
-        dop_base(end+1,1) = dmax; %#ok<AGROW>
+    dop_base = (dlo:step:dhi).';
+    if isempty(dop_base) || abs(dop_base(end) - dhi) > 1e-12
+        dop_base(end+1,1) = dhi; %#ok<AGROW>
     end
 
 elseif mode == "N"
     N = double(hyst.N);
-    if ~isfinite(N) || N < 3
-        error("hyst.N must be >= 3 when grid_mode='N'");
+    if ~isfinite(N) || N < 2
+        error("hyst.N must be >= 2 when grid_mode='N'");
     end
 
-    dop_base = linspace(dmin, dmax, round(N)).';
+    dop_base = linspace(dlo, dhi, round(N)).';
 
 else
     error("Unsupported hyst.grid_mode. Use 'N' or 'step'.");
 end
 
-% -------- apply forward direction --------
+% ---------- apply forward direction ----------
 if direction == "ascend"
     dop_fwd = dop_base;
 else
@@ -559,11 +603,11 @@ if isfield(smooth,'lorentz_gamma_factor')
 end
 
 if ~isfinite(gfac) || gfac < 0
-    return; % OFF
+    return;
 end
 
 if gfac == 0
-    gamma = 1.5 * dx; % auto
+    gamma = 1.5 * dx;
 else
     gamma = gfac * dx;
 end
@@ -603,7 +647,6 @@ end
 
 
 function pick = pick_closest_min_(mins, prev)
-% Continuation: pick the minimum closest to prev
 d = sqrt(sum((mins - prev).^2, 2));
 [~,ix] = min(d);
 pick = mins(ix,:);
@@ -611,8 +654,6 @@ end
 
 
 function mins = find_local_minima_2d_denseSeeds_(F, psi1_lim, psi2_lim, scan, opt)
-% Dense scan -> local-min mask -> pick seeds -> fminsearch -> cluster -> Hessian PD
-
 psi1 = linspace(psi1_lim(1), psi1_lim(2), scan.Npsi1);
 psi2 = linspace(psi2_lim(1), psi2_lim(2), scan.Npsi2);
 [P1,P2] = meshgrid(psi1, psi2);
