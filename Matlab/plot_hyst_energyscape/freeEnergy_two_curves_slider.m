@@ -1,4 +1,4 @@
-function freeEnergy_two_curves_fixedT_alpha_slider()
+function freeEnergy_two_curves_slider()
 % freeEnergy_two_curves_fixedT_alpha_slider
 %
 % UI for plotting:

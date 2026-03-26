@@ -35,9 +35,9 @@ function par = make_realchi_params(noAsk)
 
     % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
     % =================== T = @(dop) -A * dop^2 + C for lattice mode boundary (A,C detemined in coeff.m) ====================
-    par.Lat_pt1 = [-3.5, 0];
-    par.Lat_pt2 = [-2.5, 10];
-    
+    par.Lat_pt1 = [-2.7, 0];
+    par.Lat_pt2 = [-1.5, 10];
+
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
     par.Lat_Tc = 0;

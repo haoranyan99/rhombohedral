@@ -1,4 +1,4 @@
-function out = phase_diagram_lattice_manual_range()
+function out = phase_diagram_lattice_only()
 % phase_diagram_lattice_manual_range
 % Lattice-only phase diagram with manual doping/T range.
 %
@@ -11,7 +11,7 @@ function out = phase_diagram_lattice_manual_range()
     % =========================================================
     % 1. user settings
     % =========================================================
-    dop_min = -4.0;
+    dop_min = -3.0;
     dop_max =  0.0;
     Ndop    = 401;
 
