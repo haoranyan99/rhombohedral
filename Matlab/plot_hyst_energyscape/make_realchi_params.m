@@ -13,11 +13,11 @@ function par = make_realchi_params(noAsk)
     par = struct();
 
     % =================== q-point selection ===================
-    par.iq_pick = 1;
-    par.jq_pick = 1;
+    par.iq_pick = -1;
+    par.jq_pick = -1;
 
     % =================== chi -> coefficients =================
-    par.invV       = 12.27;
+    par.invV       = 12.28;
     par.chi_scaler = 500;
     par.T_target   = 6.5;          % used only for picking one T from loaded list
     par.T_tol      = 1e-8;
@@ -35,8 +35,8 @@ function par = make_realchi_params(noAsk)
 
     % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
     % =================== T = @(dop) -A * dop^2 + C for lattice mode boundary (A,C detemined in coeff.m) ====================
-    par.Lat_pt1 = [-2.7, 0];
-    par.Lat_pt2 = [-1.5, 10];
+    par.Lat_pt1 = [-3, 5];
+    par.Lat_pt2 = [-2.7, 8];
 
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
@@ -45,7 +45,7 @@ function par = make_realchi_params(noAsk)
     
 
     % =================== artificial magnetic field (meV) =========
-    par.artificial_polar = 0; 
+    par.artificial_polar = 10; 
 
     % =========================================================
     % =================== IO + FILTERS ========================
@@ -63,18 +63,22 @@ function par = make_realchi_params(noAsk)
     % =========================================================
     % =================== HYSTERESIS SWEEP ====================
     % =========================================================
+    par.plot_paths = ["A","B","C","D","E"];
+    par.plot_paths = ["A","B"];
     par.hyst = struct();
 
     % scanning direction
     par.hyst.forward_direction = "ascend";   % "ascend" or "descend"
+    par.hyst.doping_bump = -2.383;
+    
 
     % --- NEW: scan window on doping axis ---------------------
     % If NaN, use full available doping range from data.
     % If given, actual scan range will be:
     %   [max(min(dop0), min(scan_start,scan_end)), ...
     %    min(max(dop0), max(scan_start,scan_end))]
-    par.hyst.scan_start = -2.5;
-    par.hyst.scan_end   = 0;
+    par.hyst.scan_start = -3;
+    par.hyst.scan_end   = -0.275;
 
     % --- grid type: choose ONE ---
     par.hyst.grid_mode = "N";        % "N" or "step"

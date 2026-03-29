@@ -21,16 +21,16 @@ out.png_max_vs_polar = "";
 % ============================================================
 % USER SETTINGS (EDIT HERE)
 % ============================================================
-D_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.084";
+D_root = "E:\rg_master\data\chi_sk_mu_400\D-0.012\polar_meV0.000_-1\T6.500";
 % D_root = "/Users/haoranyan/Library/CloudStorage/OneDrive-Emory/Rhombohedral_SC/rhombohedral_project/data/chi_sk_mu_200/D0.067";
 
 % ---- pick ONE temperature ----
-T_target = 4;        % K
+T_target = 6.5;        % K
 T_tol    = 1e-6;     % K tolerance
 
 % ---- pick ONE (iq,jq) ----
-iq_pick = -133;
-jq_pick = -133;
+iq_pick = -1;
+jq_pick = -1;
 
 % ---- baseline data filters (AND); [] => disable ----
 mu_range    = [0, 1000];   % unit depends on mu_unit_in_header
@@ -38,7 +38,7 @@ dop_range   = [];          % [] => all doping
 
 % ---- USER SPECIFIED polar list (meV) to construct artificial curves ----
 % (include 0 if you want, it will reproduce baseline)
-polar_list = [0, 2.2];
+polar_list = 0:.5:20;
 
 % ---- unit of mu in header ----
 % "eV": polar_meV will be converted to eV when shifting (meV * 1e-3)

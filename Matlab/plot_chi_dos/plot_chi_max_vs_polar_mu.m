@@ -13,13 +13,13 @@ out.png = "";
 % =========================
 % USER SETTINGS (EDIT HERE)
 % =========================
-D_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\chi_sk_mu_200\D0.067";
+D_root = "E:\rg_master\data\chi_sk_mu_400_-267\D-0.012\polar_meV0.000\T6.500";
 
-T_target = 4;        % K
+T_target = 6.5;        % K
 T_tol    = 1e-6;     % K
 
-iq_pick = -133;
-jq_pick = -133;
+iq_pick = -267;
+jq_pick = -267;
 
 polar_range = [];            % meV, [] => all
 mu_range    = [];            % eV,  [] => all
