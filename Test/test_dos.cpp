@@ -1,4 +1,3 @@
-// File: Test/test_dos.cpp
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -21,12 +20,6 @@
 #include "Source/Models/RG_SKModel.h"
 #include "Source/Models/RG_KPModel.h"
 
-static std::string tag_fixed(double x, int prec) {
-    std::ostringstream oss;
-    oss.setf(std::ios::fixed);
-    oss << std::setprecision(prec) << x;
-    return oss.str();
-}
 
 int main(int argc, char** argv) {
 #ifdef USE_MPI
@@ -87,7 +80,6 @@ int main(int argc, char** argv) {
         }
 
         rg::RG_ModelBase& model = *model_ptr;
-        model.set_Dfield(cfg.Dfield_eV);
 
         // (optional) SK cache hoppings
         if (cfg.model == "sk") {
@@ -97,10 +89,10 @@ int main(int argc, char** argv) {
         }
 
         // ============================================================
-        // output subdir: data/dos_{model}_D{Dfield}eV/
+        // output subdir: data/dos_{model}_Nk{Nk}/
         // ============================================================
         const std::string subdir_name =
-            std::string("dos_") + cfg.model + "_D" + tag_fixed(cfg.Dfield_eV, 3) + "eV";
+            std::string("dos_") + cfg.model + "_Nk" + std::to_string(cfg.kmesh.Nk);
         const std::filesystem::path out_subdir = base_dir / subdir_name;
 
         if (rank == 0) {
@@ -135,53 +127,77 @@ int main(int argc, char** argv) {
                       << "] num_e=" << cfg.dos.num_e
                       << " eta=" << cfg.dos.eta
                       << " T_K=" << cfg.T_K << "\n";
+            std::cout << "nD       = " << cfg.DfieldList_meV.size() << "\n";
         }
 
         // ============================================================
-        // DOS Gaussian (also filling/doping columns if model provides them)
+        // loop over DfieldList_eV
         // ============================================================
-        core::SeriesData dosS =
-            model.cal_dos_gaussian(
-                kmesh,
-                cfg.dos.e_low,
-                cfg.dos.e_high,
-                cfg.dos.num_e,
-                cfg.dos.eta,
-                cfg.T_K,
-                /*enforce_hermitian=*/true
-            );
+        for (double Dfield_meV : cfg.DfieldList_meV) {
+            double Dgap = Dfield_meV * 0.001 * para.d0 * 0.1 / (1 + para.epsilon_r);
+            model.set_Dfield(Dgap);
 
-        // ============================================================
-        // output (rank0 only)
-        // ============================================================
-        if (rank == 0) {
-            // filename
-            const std::string run_stamp = rgio::make_time_stamp("dos_");
-            const std::string out_name = run_stamp + ".txt";
+            const std::string tag_gap = rgio::tag3(Dgap * 1000);
+            const std::string tag_field = rgio::tag1(Dfield_meV);
 
-            // header = st.write_info + model.write_info + run info
-            std::ostringstream hdr;
-            st.write_info(hdr, "# ");
-            model.write_info(hdr, "# ");
+            if (rank == 0) {
+                std::cout << "\n=== Dfield = " << tag_gap
+                          << " meV (" << tag_field << " meV/ nm) ===\n";
+            }
 
-            hdr << "# --- dos run ---\n";
-            hdr << "# config_file = " << config_file << "\n";
-            hdr << "# model = " << cfg.model << "\n";
-            hdr << "# Dfield_eV = " << cfg.Dfield_eV << "\n";
-            hdr << "# T_K = " << cfg.T_K << " K\n";
-            hdr << "# kmesh = " << cfg.kmesh.type
-                << " Nk=" << cfg.kmesh.Nk
-                << " dk_frac=" << cfg.kmesh.dk_frac << "\n";
-            hdr << "# E_scan = [" << cfg.dos.e_low << ", " << cfg.dos.e_high
-                << "], num_e=" << cfg.dos.num_e
-                << ", eta=" << cfg.dos.eta << "\n";
+            // ========================================================
+            // DOS Gaussian
+            // ========================================================
+            core::SeriesData dosS =
+                model.cal_dos_gaussian(
+                    kmesh,
+                    cfg.dos.e_low,
+                    cfg.dos.e_high,
+                    cfg.dos.num_e,
+                    cfg.dos.eta,
+                    cfg.T_K,
+                    /*enforce_hermitian=*/true
+                );
+
+            // ========================================================
+            // output (rank0 only)
+            // ========================================================
+            if (rank == 0) {
+                const std::string run_stamp = rgio::make_time_stamp("");
+                const std::string out_name =
+                    "dos_D" + tag_field + "meV_" + run_stamp + ".txt";
+                const std::filesystem::path out_path = out_subdir / out_name;
+
+                std::ostringstream hdr;
+                st.write_info(hdr, "# ");
+                model.write_info(hdr, "# ");
+
+                hdr << "# --- dos run ---\n";
+                hdr << "# config_file = " << config_file << "\n";
+                hdr << "# model = " << cfg.model << "\n";
+                hdr << "# Dfield_meV = " << tag_field << "\n";
+                hdr << "# Dgap_meV = " << tag_gap << "\n";
+                hdr << "# T_K = " << cfg.T_K << " K\n";
+                hdr << "# kmesh = " << cfg.kmesh.type
+                    << " Nk=" << cfg.kmesh.Nk
+                    << " dk_frac=" << cfg.kmesh.dk_frac << "\n";
+                hdr << "# E_scan = [" << cfg.dos.e_low << ", " << cfg.dos.e_high
+                    << "], num_e=" << cfg.dos.num_e
+                    << ", eta=" << cfg.dos.eta << "\n";
 #ifdef USE_MPI
-            hdr << "# mpi_ranks = " << nprocs << "\n";
+                hdr << "# mpi_ranks = " << nprocs << "\n";
 #endif
 
-            rgio::write_dos_txt(out_name, dosS, hdr.str());
+                rgio::write_dos_txt(out_path.string(), dosS, hdr.str());
 
-            std::cout << "Wrote:\n  " << out_name << "\nDONE.\n";
+                std::cout << "Wrote:\n  " << out_path.string() << "\n";
+            }
+
+            rgmpi::barrier();
+        }
+
+        if (rank == 0) {
+            std::cout << "DONE.\n";
         }
 
         rgmpi::finalize();

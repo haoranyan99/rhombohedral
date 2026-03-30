@@ -35,6 +35,7 @@ struct RGPara {
     double d0        = 3.35;
     double vacuum    = 10.0;
     double pressure  = 0.0;
+    double epsilon_r = 3.5;
 };
 
 
@@ -82,9 +83,9 @@ struct TestDOSConfig {
     std::string data_dir  = "data";
     std::string para_file = "Source/Parameters/RG_para.json";
     std::string model = "sk";
-
-    double Dfield_eV  = 0.0;
     double T_K = 0.0;
+
+    std::vector<double> DfieldList_meV; // meV * nm^-1
 
     MeshCfg kmesh;
     DOSCfg dos;
@@ -98,7 +99,6 @@ struct CalFermiConfig {
     std::string output_suffix = "0";
     std::string para_file = "Source/Parameters/RG_para.json";
     
-
     double Dfield_eV  = 0.0;
 
     MeshCfg kmesh;
@@ -163,6 +163,7 @@ inline RGPara read_rg_para(const std::string& para_file)
     p.vacuum    = j.at("lattice").at("vacuum_A").get<double>();
     p.pressure  = j.at("lattice").at("pressure").get<double>();
     p.layer_num = j.at("lattice").at("layer_num").get<int>();
+    p.epsilon_r = j.at("lattice").at("epsilon_r").get<double>();
 
     return p;
 }
@@ -255,7 +256,6 @@ inline TestDOSConfig read_test_dos_config(const std::string& config_file)
     const auto& task = j.at("tasks").at("test_dos");
 
     if (task.contains("model"))     c.model     = task.at("model").get<std::string>();
-    if (task.contains("Dfield_eV")) c.Dfield_eV = task.at("Dfield_eV").get<double>();
     if (task.contains("T_K"))       c.T_K       = task.at("T_K").get<double>();
 
     // kmesh
@@ -274,6 +274,19 @@ inline TestDOSConfig read_test_dos_config(const std::string& config_file)
         if (d.contains("num_e"))  c.dos.num_e  = d.at("num_e").get<int>();
         if (d.contains("eta"))    c.dos.eta    = d.at("eta").get<double>();
     }
+
+    const auto para = read_rg_para(c.para_file);
+    const auto& Dlist = task.at("DfieldList_meVnm^-1");
+    const double Dmin = Dlist.at("min").get<double>();
+    const double Dmax = Dlist.at("max").get<double>();
+    const int    nD   = Dlist.at("num").get<int>();
+
+    if (nD < 1)
+        throw std::runtime_error("DfieldList_meVnm^-1.num must be >= 1");
+    if (Dmax < Dmin)
+        throw std::runtime_error("DfieldList_meVnm^-1.max must be >= min");
+
+    c.DfieldList_meV = la::linspace(Dmin, Dmax, nD);
 
     return c;
 }

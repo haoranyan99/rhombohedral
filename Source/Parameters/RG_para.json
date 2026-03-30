@@ -5,7 +5,8 @@
     "d0_A": 3.35,
     "vacuum_A": 10.0,
     "pressure": 0.0,
-    "isp_coeff_eV_per_A": 0.005
+    "isp_coeff_eV_per_A": 0.005,
+    "epsilon_r": 3.5
   },
 
   "sk_params": {

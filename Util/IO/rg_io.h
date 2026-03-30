@@ -86,6 +86,8 @@ inline std::string tag_double_fixed(double x, int prec) {
     oss << std::setprecision(prec) << x;
     return oss.str();
 }
+inline std::string tag1(double m)      { return tag_double_fixed(m, 1); }
+inline std::string tag2(double m)      { return tag_double_fixed(m, 2); }
 inline std::string tag3(double m)      { return tag_double_fixed(m, 3); }
 inline std::string tag4(double m)      { return tag_double_fixed(m, 4); }
 inline std::string tag5(double m)      { return tag_double_fixed(m, 5); }
