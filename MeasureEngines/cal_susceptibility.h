@@ -27,6 +27,10 @@ namespace rg {
 using Vec2 = Eigen::Vector2d;
 using cd   = std::complex<double>;
 
+inline int wrap_q_index(int q, int Nk) {
+    const int P = 2 * Nk + 1;
+    return ((q + Nk) % P + P) % P - Nk;
+}
 
 // ============================================================
 // Core kernel: compute chi from an already-loaded fgrid.
@@ -200,8 +204,8 @@ inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
             int jq2 = jq1 + dq_jq;
 
             if (boundary_periodic) {
-                iq2 = la::mod_pos_int(iq2 + Nk, P) - Nk;
-                jq2 = la::mod_pos_int(jq2 + Nk, P) - Nk;
+                iq2 = wrap_q_index(iq2, Nk);
+                jq2 = wrap_q_index(jq2, Nk);
             } else {
                 if (iq2 < -Nk || iq2 > Nk) continue;
                 if (jq2 < -Nk || jq2 > Nk) continue;
