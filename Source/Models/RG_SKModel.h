@@ -88,20 +88,15 @@ public:
 public:
     RG_SKModel() = default;
 
-    // (1) 默认构造：维持原行为（自动找 Source/Parameters/RG_para.json 等默认路径）
     explicit RG_SKModel(const RG_Structure& st);
-
-    // (2) 新增构造：允许显式指定 json 路径；为空则回退到默认路径
     explicit RG_SKModel(const RG_Structure& st, const std::string& para_path);
 
-    // 运行时指定参数文件；空字符串则回到默认路径
     void set_para_file(const std::string& para_path) {
         if (para_path.empty()) {
             load_params_from_default_json_();
         } else {
             load_params_from_json_(std::filesystem::path(para_path));
         }
-        // 参数改变后，hoppings 需要重建
         hoppings_cached_.clear();
         hoppings_built_ = false;
     }
@@ -126,10 +121,8 @@ public:
 private:
     static std::filesystem::path resolve_default_para_path_();
 
-    // 通用：从指定 json 路径读取 sk_params
     void load_params_from_json_(const std::filesystem::path& path);
 
-    // 默认：走 resolve_default_para_path_() 找到路径后再调用 load_params_from_json_
     void load_params_from_default_json_();
 
     std::vector<Vec3> atoms_cart_() const;
@@ -349,7 +342,7 @@ inline double RG_SKModel::Vpp_sigma_(double r) const
     return p_.Vpp_sigma0 * std::exp(expo) * soft_cut_(r);
 }
 
-inline double RG_SKModel::sk_integral_pz_pz_(const Vec3& dr, double r) const
+inline double RG_SKModel::sk_integral_pz_pz_(const Vec3& dr, double r) const // r = |dr|
 {
     const double z = dr.z();
     const double z2_over_r2 = (z*z) / (r*r);
@@ -363,14 +356,12 @@ inline double RG_SKModel::sk_integral_pz_pz_(const Vec3& dr, double r) const
 // constructors + json loader
 // ============================
 
-// (1) 默认构造：保持原行为
 inline RG_SKModel::RG_SKModel(const RG_Structure& st)
     : RG_ModelBase(st)
 {
     load_params_from_default_json_();
 }
 
-// (2) 新构造：允许指定路径；空则回默认
 inline RG_SKModel::RG_SKModel(const RG_Structure& st, const std::string& para_path)
     : RG_ModelBase(st)
 {

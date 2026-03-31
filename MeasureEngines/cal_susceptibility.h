@@ -27,9 +27,9 @@ namespace rg {
 using Vec2 = Eigen::Vector2d;
 using cd   = std::complex<double>;
 
-inline int wrap_q_index(int q, int Nk) {
-    const int P = 2 * Nk + 1;
-    return ((q + Nk) % P + P) % P - Nk;
+inline int wrap_q_index(int i, int Nk) {
+    const int P = 2 * Nk;
+    return ((i + Nk) % P + P) % P - Nk;
 }
 
 // ============================================================
