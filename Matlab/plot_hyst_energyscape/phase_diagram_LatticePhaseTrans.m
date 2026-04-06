@@ -1,4 +1,4 @@
-function out = phase_diagram_lattice_only()
+function out = phase_diagram_LatticePhaseTrans()
 % phase_diagram_lattice_manual_range
 % Lattice-only phase diagram with manual doping/T range.
 %

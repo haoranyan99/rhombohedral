@@ -610,22 +610,16 @@ end
 
 function C = detect_cols_(M)
     ncol = size(M,2);
-    C = struct('iq',2,'jq',3,'Re',6);
-    if ncol < 6
-        C.iq = 1; C.jq = 2; C.Re = max(1, min(5,ncol));
-        return;
-    end
-    intlike = @(x) all(abs(x - round(x)) < 1e-9);
+
     if ncol >= 7
-        col1 = M(:,1); col2 = M(:,2); col3 = M(:,3);
-        if intlike(col1) && (min(col1)==0 || min(col1)==1) && intlike(col2) && intlike(col3)
-            if any(col2 < 0) || any(col3 < 0) || max(abs(col2)) > 5 || max(abs(col3)) > 5
-                C.iq = 2; C.jq = 3; C.Re = 6;
-                return;
-            end
-        end
+        % idx iq jq qx qy Re Im [extra]
+        C = struct('iq',2,'jq',3,'Re',6);
+    elseif ncol == 6
+        % iq jq qx qy Re Im
+        C = struct('iq',1,'jq',2,'Re',5);
+    else
+        error('Unsupported chi table format: %d columns', ncol);
     end
-    C.iq = 1; C.jq = 2; C.Re = 5;
 end
 
 function print_debug_summary_(dbg, G)
