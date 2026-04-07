@@ -17,7 +17,7 @@ par  = make_realchi_params(true);
 coef = make_realchi_coeff(par);
 
 % ---------------- choose folder -----------------
-default_root = "/Users/haoranyan/rg_master/data/";
+default_root = "E:/rg_master/data/";
 if ~isfolder(default_root)
     default_root = string(pwd);
 end

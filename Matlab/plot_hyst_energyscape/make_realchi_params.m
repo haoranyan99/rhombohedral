@@ -69,7 +69,7 @@ function par = make_realchi_params(noAsk)
 
     % scanning direction
     par.hyst.forward_direction = "ascend";   % "ascend" or "descend"
-    par.hyst.doping_bump = -2.383;
+    par.hyst.doping_bump = -1.44;
     
 
     % --- NEW: scan window on doping axis ---------------------
