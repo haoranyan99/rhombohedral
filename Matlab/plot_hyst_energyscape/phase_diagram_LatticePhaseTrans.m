@@ -11,7 +11,7 @@ function out = phase_diagram_LatticePhaseTrans()
     % =========================================================
     % 1. user settings
     % =========================================================
-    dop_min = -3.0;
+    dop_min = -2.0;
     dop_max =  0.0;
     Ndop    = 401;
 

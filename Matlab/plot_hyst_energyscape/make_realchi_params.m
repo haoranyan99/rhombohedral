@@ -51,7 +51,7 @@ function par = make_realchi_params(noAsk)
     % =================== IO + FILTERS ========================
     % =========================================================
     par.io = struct();
-    par.io.default_root = "D:\OneDrive - Emory\Rhombohedral_SC\rhombohedral_project\data\";
+    par.io.default_root = "E:/rg_master/data";
 
     % -------- NEW: range filters --------
     % Temperature range is parsed from folder name (preferred).
