@@ -45,7 +45,7 @@ function par = make_realchi_params(noAsk)
     
 
     % =================== artificial magnetic field (meV) =========
-    par.artificial_polar = 0; 
+    par.artificial_polar = 7; 
 
     % =========================================================
     % =================== IO + FILTERS ========================
