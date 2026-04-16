@@ -167,30 +167,22 @@ function plot_fermi_contour()
     S.IQ_pts = IQ_pts;
     S.JQ_pts = JQ_pts;
     S.band_idx = band_idx;
-    S.marker = [];
-    S.label  = [];
+
+    % 多个标注：
+    % 每个元素对应一个被标记的点
+    S.tags = struct( ...
+        'iq', {}, 'jq', {}, ...
+        'kx', {}, 'ky', {}, 'f', {}, ...
+        'marker', {}, 'label', {} );
+
     guidata(fig, S);
 
-    % left click = show/update label
-    % right click = clear label
     set(fig, 'WindowButtonDownFcn', @mouseClickCallback);
 
     function mouseClickCallback(src, ~)
         S = guidata(src);
 
-        % selection type:
-        % normal  = left click
-        % alt     = right click / ctrl-click
         clickType = get(src, 'SelectionType');
-
-        if strcmp(clickType, 'alt')
-            if isgraphics(S.marker), delete(S.marker); end
-            if isgraphics(S.label),  delete(S.label);  end
-            S.marker = [];
-            S.label  = [];
-            guidata(src, S);
-            return;
-        end
 
         cp = get(S.ax, 'CurrentPoint');
         xq = cp(1,1);
@@ -202,6 +194,7 @@ function plot_fermi_contour()
             return;
         end
 
+        % 找最近点
         dx = S.KX_pts - xq;
         dy = S.KY_pts - yq;
         dist2 = dx.^2 + dy.^2;
@@ -213,22 +206,64 @@ function plot_fermi_contour()
         ky_near = S.KY_pts(imin);
         f_near  = S.F_pts(imin);
 
-        if isgraphics(S.marker), delete(S.marker); end
-        if isgraphics(S.label),  delete(S.label);  end
+        % 用 (iq,jq) 作为唯一标识
+        idx_exist = [];
+        for it = 1:numel(S.tags)
+            if S.tags(it).iq == iq_near && S.tags(it).jq == jq_near
+                idx_exist = it;
+                break;
+            end
+        end
 
-        S.marker = plot(S.ax, kx_near, ky_near, 'ro', ...
-            'MarkerSize', 7, 'LineWidth', 1.3);
+        % --------------------------
+        % right click: 若该点已存在，则删除
+        % --------------------------
+        if strcmp(clickType, 'alt')
+            if ~isempty(idx_exist)
+                if isgraphics(S.tags(idx_exist).marker)
+                    delete(S.tags(idx_exist).marker);
+                end
+                if isgraphics(S.tags(idx_exist).label)
+                    delete(S.tags(idx_exist).label);
+                end
+                S.tags(idx_exist) = [];
+                guidata(src, S);
 
-        S.label = text(S.ax, kx_near, ky_near, ...
-            sprintf('  (iq,jq)=(%d,%d)\n  f_%d=%.4f', ...
-            iq_near, jq_near, S.band_idx, f_near), ...
-            'Color', 'r', 'FontSize', 11, ...
-            'VerticalAlignment', 'bottom', ...
-            'Interpreter', 'none');
+                fprintf('remove point: iq=%d, jq=%d\n', iq_near, jq_near);
+            end
+            return;
+        end
 
-        guidata(src, S);
+        % --------------------------
+        % left click: 若不存在，则新增；若已存在，则不重复添加
+        % --------------------------
+        if isempty(idx_exist)
+            hMarker = plot(S.ax, kx_near, ky_near, 'ro', ...
+                'MarkerSize', 7, 'LineWidth', 1.3);
 
-        fprintf('nearest point: iq=%d, jq=%d, kx=%.6f, ky=%.6f, f_%d=%.6f\n', ...
-            iq_near, jq_near, kx_near, ky_near, S.band_idx, f_near);
+            hLabel = text(S.ax, kx_near, ky_near, ...
+                sprintf('  (iq,jq)=(%d,%d)\n  f_%d=%.4f', ...
+                iq_near, jq_near, S.band_idx, f_near), ...
+                'Color', 'r', 'FontSize', 11, ...
+                'VerticalAlignment', 'bottom', ...
+                'Interpreter', 'none');
+
+            newTag.iq = iq_near;
+            newTag.jq = jq_near;
+            newTag.kx = kx_near;
+            newTag.ky = ky_near;
+            newTag.f  = f_near;
+            newTag.marker = hMarker;
+            newTag.label  = hLabel;
+
+            S.tags(end+1) = newTag;
+            guidata(src, S);
+
+            fprintf('add point: iq=%d, jq=%d, kx=%.6f, ky=%.6f, f_%d=%.6f\n', ...
+                iq_near, jq_near, kx_near, ky_near, S.band_idx, f_near);
+        else
+            % 已存在时，左击不重复添加
+            fprintf('point already exists: iq=%d, jq=%d\n', iq_near, jq_near);
+        end
     end
 end

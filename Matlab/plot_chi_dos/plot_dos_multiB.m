@@ -1,4 +1,4 @@
-function out_png_list = plot_dos_shiftMean_multiShift_vs_x()
+function out_png_list = plot_dos_multiB()
 % Plot multiple shift-mean DOS curves vs x-axis = doping or mu
 %
 % Rule:
