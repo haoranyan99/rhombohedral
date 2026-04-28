@@ -24,7 +24,7 @@ out_png_list = strings(0);
 % USER SETTINGS
 % ==========================
 start_dir = "E:/rg_master/data/";
-mu_shift_list_meV = [0, 2, 4, 6, 8, 10];   % multiple shifts in meV
+mu_shift_list_meV = [0, 1, 2, 3, 4, 5, 6];   % multiple shifts in meV
 save_png = false;
 FS = 14;
 LW_org = 2.0;

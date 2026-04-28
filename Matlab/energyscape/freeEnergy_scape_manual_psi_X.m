@@ -1,9 +1,14 @@
-function plot_energy_landscape_psi_X_fixedLattice()
-% plot_energy_landscape_psi_X_fixedLattice
+function plot_energy_landscape_psi_X_fixedLattice_withCurves()
+% plot_energy_landscape_psi_X_fixedLattice_withCurves
+%
 % 2D free-energy landscape:
-% x-axis  : psi
-% y-axis  : X
-% colormap: hot
+%   x-axis  : psi
+%   y-axis  : X
+%   colormap: hot
+%
+% Also plot two 1D cuts:
+%   (1) F vs psi at fixed X = X_fix_for_psi_curve
+%   (2) F vs X   at fixed psi = psi_fix_for_X_curve
 %
 % Electronic part:
 %   F_el = 1/2 a1 psi^2 + b1/24 psi^4
@@ -19,13 +24,45 @@ clc; close all;
 %% =========================
 % USER PARAMETERS
 % ==========================
-% a1 = -2;
-% b1 = 12;
-% lambda = 0.2;
+
+psi_fix_for_X_curve = -.564;
+X_fix_for_psi_curve = 1.0272;
 
 a1 = 0.1;
 b1 = 12;
-lambda = 0.2;
+lambda = 0.4;
+
+% psi_fix_for_X_curve = -1.015;
+% X_fix_for_psi_curve = 1.0464;
+% 
+% a1 = -2;
+% b1 = 12;
+% lambda = 0.4;
+
+% psi_fix_for_X_curve = 0;
+% X_fix_for_psi_curve = 0;
+% 
+% a1 = 0.1;
+% b1 = 12;
+% lambda = 0;
+
+
+
+% psi_fix_for_X_curve = -1.002;
+% X_fix_for_psi_curve = 0;
+% 
+% a1 = -2;
+% b1 = 12;
+% lambda = 0;
+
+
+
+
+% ---------------------------------
+% manual cuts for 1D curves
+% ---------------------------------
+
+
 
 % fixed lattice shape
 kX = 1;     % overall lattice energy scale
@@ -54,6 +91,10 @@ exclude_boundary = true;   % ignore minima on outermost boundary
 merge_tol_psi    = 0.02;   % merge nearby minima in psi
 merge_tol_X      = 0.02;   % merge nearby minima in X
 
+
+% whether to shift each 1D curve by its own minimum
+shift_curve_min_to_zero = false;
+
 %% =========================
 % GRID
 % ==========================
@@ -65,7 +106,7 @@ dpsi = psiList(2) - psiList(1);
 dX   = XList(2)   - XList(1);
 
 %% =========================
-% FREE ENERGY
+% FREE ENERGY LANDSCAPE
 % ==========================
 F = free_energy_model(PSI, XX, a1, b1, lambda, kX, X0);
 
@@ -118,7 +159,11 @@ for i = row_start:row_end
         center = F(i,j);
         
         neigh = block(:);
-        center_idx = ceil(numel(neigh)/2);
+
+        % center index inside the block
+        nrow = i2 - i1 + 1;
+        ncol = j2 - j1 + 1;
+        center_idx = sub2ind([nrow, ncol], i - i1 + 1, j - j1 + 1);
         
         % remove center element
         neigh(center_idx) = [];
@@ -129,15 +174,12 @@ for i = row_start:row_end
     end
 end
 
-[minRows, minCols] = find(isLocalMin);
-
 psi_local = PSI(isLocalMin);
 X_local   = XX(isLocalMin);
 F_local   = F(isLocalMin);
 
 %% =========================
 % MERGE VERY CLOSE MINIMA
-% (avoid many nearly identical minima due to dense mesh)
 % ==========================
 if ~isempty(psi_local)
     keep = true(size(psi_local));
@@ -169,6 +211,10 @@ end
 %% =========================
 % PRINT LOCAL MINIMA
 % ==========================
+fprintf('\n==== Global minimum ====\n');
+fprintf('psi = %+8.5f, X = %+8.5f, F = %+12.8f\n', ...
+    psi_min_loc, X_min_loc, Fmin);
+
 fprintf('\n==== Local minima found: %d ====\n', numel(F_local));
 for n = 1:numel(F_local)
     fprintf('min %2d: psi = %+8.5f, X = %+8.5f, F = %+12.8f\n', ...
@@ -176,7 +222,33 @@ for n = 1:numel(F_local)
 end
 
 %% =========================
-% PLOT
+% 1D CURVES
+% ==========================
+F_vs_psi = free_energy_model(psiList, X_fix_for_psi_curve, ...
+    a1, b1, lambda, kX, X0);
+
+F_vs_X = free_energy_model(psi_fix_for_X_curve, XList, ...
+    a1, b1, lambda, kX, X0);
+
+if shift_curve_min_to_zero
+    F_vs_psi = F_vs_psi - min(F_vs_psi);
+    F_vs_X   = F_vs_X   - min(F_vs_X);
+end
+
+% values of cut-lines on the 2D landscape
+F_cut_psi = free_energy_model(psiList, X_fix_for_psi_curve, ...
+    a1, b1, lambda, kX, X0);
+
+F_cut_X = free_energy_model(psi_fix_for_X_curve, XList, ...
+    a1, b1, lambda, kX, X0);
+
+if shift_min_to_zero
+    F_cut_psi = F_cut_psi - min(F(:));
+    F_cut_X   = F_cut_X   - min(F(:));
+end
+
+%% =========================
+% PLOT: 2D landscape
 % ==========================
 figure('Color','w','Position',[100 80 850 700]);
 
@@ -191,12 +263,71 @@ if show_contour
     contour(psiList, XList, F, num_contours, 'k-', 'LineWidth', 0.45);
 end
 
-% plot all local minima (same style)
+% plot all local minima
 plot(psi_local, X_local, 'bo', ...
     'MarkerSize', 7, 'LineWidth', 1.5, 'MarkerFaceColor', 'b');
 
+% mark global minimum
+plot(psi_min_loc, X_min_loc, 'co', ...
+    'MarkerSize', 9, 'LineWidth', 1.8);
+
+% draw the two cut lines
+plot(psiList, X_fix_for_psi_curve * ones(size(psiList)), 'w--', 'LineWidth', 1.4);
+plot(psi_fix_for_X_curve * ones(size(XList)), XList, 'c--', 'LineWidth', 1.4);
+
 xlabel('\psi', 'FontSize', FS);
 ylabel('X', 'FontSize', FS);
+title('2D free-energy landscape', 'FontSize', FS);
+set(gca, 'FontSize', FS, 'LineWidth', 1.2, 'Box', 'on');
+
+%% =========================
+% PLOT: F vs psi at fixed X
+% ==========================
+figure('Color','w','Position',[120 100 760 560]);
+plot(psiList, F_vs_psi, 'k-', 'LineWidth', 2); hold on;
+
+% mark local minima lying close to this fixed X cut
+tol_X_cut = max(merge_tol_X, 1.5*dX);
+mask_cut_psi = abs(X_local - X_fix_for_psi_curve) < tol_X_cut;
+if any(mask_cut_psi)
+    psi_cut_pts = psi_local(mask_cut_psi);
+    F_cut_pts   = free_energy_model(psi_cut_pts, X_fix_for_psi_curve, ...
+        a1, b1, lambda, kX, X0);
+    if shift_curve_min_to_zero
+        F_cut_pts = F_cut_pts - min(F_vs_psi);
+    end
+    plot(psi_cut_pts, F_cut_pts, 'bo', 'MarkerSize', 7, ...
+        'LineWidth', 1.5, 'MarkerFaceColor', 'b');
+end
+
+xlabel('\psi', 'FontSize', FS);
+ylabel('F(\psi)', 'FontSize', FS);
+title(sprintf('1D cut: X = %.4f', X_fix_for_psi_curve), 'FontSize', FS);
+set(gca, 'FontSize', FS, 'LineWidth', 1.2, 'Box', 'on');
+
+%% =========================
+% PLOT: F vs X at fixed psi
+% ==========================
+figure('Color','w','Position',[140 120 760 560]);
+plot(XList, F_vs_X, 'k-', 'LineWidth', 2); hold on;
+
+% mark local minima lying close to this fixed psi cut
+tol_psi_cut = max(merge_tol_psi, 1.5*dpsi);
+mask_cut_X = abs(psi_local - psi_fix_for_X_curve) < tol_psi_cut;
+if any(mask_cut_X)
+    X_cut_pts = X_local(mask_cut_X);
+    F_cut_pts = free_energy_model(psi_fix_for_X_curve, X_cut_pts, ...
+        a1, b1, lambda, kX, X0);
+    if shift_curve_min_to_zero
+        F_cut_pts = F_cut_pts - min(F_vs_X);
+    end
+    plot(X_cut_pts, F_cut_pts, 'bo', 'MarkerSize', 7, ...
+        'LineWidth', 1.5, 'MarkerFaceColor', 'b');
+end
+
+xlabel('X', 'FontSize', FS);
+ylabel('F(X)', 'FontSize', FS);
+title(sprintf('1D cut: \\psi = %.4f', psi_fix_for_X_curve), 'FontSize', FS);
 set(gca, 'FontSize', FS, 'LineWidth', 1.2, 'Box', 'on');
 
 end

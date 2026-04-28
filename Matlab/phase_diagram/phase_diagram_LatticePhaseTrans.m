@@ -16,7 +16,7 @@ function out = phase_diagram_LatticePhaseTrans()
     Ndop    = 401;
 
     T_min = 0.0;
-    T_max = 20.0;
+    T_max = 10.0;
     NT    = 401;
 
     show_background = true;

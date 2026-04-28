@@ -1,4 +1,4 @@
-function out_png = plot_fermi_E_and_f_scan_T_mu_UI2()
+function out_png = plot_fermi_E_and_f_UI2()
 % plot_fermi_E_and_f_scan_T_mu_UI3
 % Browse debug fermiPatch files with THREE sliders:
 %   Slider-1: Temperature T (from header; fallback to /Txx/ in path if header missing)

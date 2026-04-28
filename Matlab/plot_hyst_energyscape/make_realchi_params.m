@@ -13,12 +13,13 @@ function par = make_realchi_params(noAsk)
     par = struct();
 
     % =================== q-point selection ===================
-    par.iq_pick = 1;
-    par.jq_pick = 1;
+    par.iq_pick = 3;
+    par.jq_pick = -3;
 
     % =================== chi -> coefficients =================
     par.invV       = 12.28;
-    par.chi_scaler = 300;
+    par.chi_scaler = 300; 
+
     par.T_target   = 6.5;          % used only for picking one T from loaded list
     par.T_tol      = 1e-8;
 
@@ -36,7 +37,7 @@ function par = make_realchi_params(noAsk)
     % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
     % =================== T = @(dop) -A * dop^2 + C for lattice mode boundary (A,C detemined in coeff.m) ====================
     par.Lat_pt1 = [-2, 2];
-    par.Lat_pt2 = [-1.5, 8];
+    par.Lat_pt2 = [0, 10];
 
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
@@ -45,7 +46,7 @@ function par = make_realchi_params(noAsk)
     
 
     % =================== artificial magnetic field (meV) =========
-    par.artificial_polar = 7; 
+    par.artificial_polar = 0; 
 
     % =========================================================
     % =================== IO + FILTERS ========================
@@ -58,7 +59,7 @@ function par = make_realchi_params(noAsk)
     % Set [-Inf Inf] to disable.
     par.io.T_range_K = [0, 100];
     par.io.mu_range  = [0, 100];
-    par.io.dop_range = [0, 100];
+    par.io.dop_range = [-Inf Inf];
 
     % =========================================================
     % =================== HYSTERESIS SWEEP ====================
@@ -77,7 +78,7 @@ function par = make_realchi_params(noAsk)
     % If given, actual scan range will be:
     %   [max(min(dop0), min(scan_start,scan_end)), ...
     %    min(max(dop0), max(scan_start,scan_end))]
-    par.hyst.scan_start = -2;
+    par.hyst.scan_start = -2.5;
     par.hyst.scan_end   = 0;
 
     % --- grid type: choose ONE ---

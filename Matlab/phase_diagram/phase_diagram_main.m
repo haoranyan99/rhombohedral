@@ -1,28 +1,9 @@
-function out = phase_diagram_FourPhaseTransition()
-% phase_diagram12_realchi
-% Classification by coefficients ONLY:
-%   a2crit = (5/6) * b2^2
-%   if a2 >= a2crit: in "phase1-family"
-%       if a1 < 0 => phase4 else phase1
-%   if a2 <  a2crit: in "phase2-family"
-%       if a1 < 0 => phase3 else phase2
-% invalid if missing/NaN
-%
-% X-axis = folder-controlled variable (mu or doping):
-%   - .../Txxx/muXXX/*.txt     => x-axis = mu(folder)
-%   - .../Txxx/dopingXXX/*.txt => x-axis = doping(folder)
-%
-% Internal coef.eval ALWAYS uses doping from HEADER:
-%   C = coef.eval(T_header, doping_header, chi_used)
-%
-% Plot:
-%   - aligned blocks by true coordinate edges
-%   - contour for boundary a2-a2crit=0
-%   - datatip shows (T, folder U, phase, header doping, a1,a2,b2,a2crit)
-%
-% Needs:
-%   - make_realchi_params()
-%   - make_realchi_coeff(par): coef.eval(T, doping, chi)->a1,b1,a2,b2,c2
+function out = phase_diagram_main()
+% phase_diagram_realchi4_folderUI_aligned_hover (SIMPLIFIED FIX)
+% Fixes:
+%   1) remove dependency on par.fontSize (use FS)
+%   2) title uses Interpreter='none' to avoid LaTeX syntax errors
+%   3) delete helper phase_name_ (datatip shows phase number only)
 
     % -------------------- params / coeff --------------------
     par  = make_realchi_params();
@@ -43,6 +24,25 @@ function out = phase_diagram_FourPhaseTransition()
     iq_pick = round(par.iq_pick);
     jq_pick = round(par.jq_pick);
     fprintf("Pick absolute q-point: (iq,jq)=(%d,%d)\n", iq_pick, jq_pick);
+
+    % ---------------- classification settings (YOUR v3 rules) ----------------
+    cls = struct();
+    cls.h = 2e-3;                 % FD step for Hessian
+    cls.eig_eps = 1e-10;          % PD threshold
+    cls.X0_tol = 1;               % |X|>X0_tol treated as X != 0
+    cls.cluster_tol_1d = 3e-2;    % merge nearby 1D minima locations
+
+    cls.origin_box = 1;
+    cls.origin_grid = 11;
+    cls.origin_refine_topK = 6;
+    cls.origin_refine_jitter = 3e-5;
+
+    cls.Npsi_small = 7;
+    cls.Nx_small   = 401;
+
+    cls.Npsi_wide = 41;
+    cls.Nx_wide   = 601;
+    cls.psi_line_max = 0.9 * max(abs(par.psi1_lim));
 
     % ---------------- debug config ----------------
     dbg = struct();
@@ -73,134 +73,51 @@ function out = phase_diagram_FourPhaseTransition()
         error("Parsed 0 valid points. Check folder tree / headers / (iq,jq).");
     end
 
-    % ---------------- classify (ONLY by coefficients) ----------------
-    % phase code:
-    %   0 invalid
-    %   1 phase1 (a2>=a2crit, a1>=0)
-    %   2 phase2 (a2< a2crit, a1>=0)
-    %   3 phase3 (a2< a2crit, a1< 0)
-    %   4 phase4 (a2>=a2crit, a1< 0)
-    phase_map = zeros(NT, NU);
-
-    a1_map   = nan(NT, NU);
-    a2_map   = nan(NT, NU);
-    b2_map   = nan(NT, NU);
-    crit_map = nan(NT, NU);
-
-    % optional parallel
+    % parallel (optional)
     try
         p = gcp('nocreate');
         if isempty(p), parpool; end
-        usePar = true;
     catch
         fprintf("[warn] Parallel pool not available. Running serial.\n");
-        usePar = false;
     end
 
-    if usePar
-        parfor iT = 1:NT
-            T = T_list(iT);
+    % ---------------- classify ----------------
+    phase_map = zeros(NT, NU);
 
-            ph_row  = zeros(1,NU);
-            a1_row  = nan(1,NU);
-            a2_row  = nan(1,NU);
-            b2_row  = nan(1,NU);
-            cr_row  = nan(1,NU);
+    parfor iT = 1:NT
+        T = T_list(iT);
+        ph_row = zeros(1,NU);
 
-            for iU = 1:NU
-                chi_used = chi_map(iT,iU);
-                dop = dop_map(iT,iU);
+        for iU = 1:NU
+            chi_used = chi_map(iT,iU);
+            dop = dop_map(iT,iU);  % header doping used internally
 
-                if ~isfinite(chi_used) || ~isfinite(dop)
-                    ph_row(iU) = 0;
-                    continue;
-                end
-
-                try
-                    C  = coef.eval(T, dop, chi_used);
-                    a1 = C.a1; a2 = C.a2; b2 = C.b2;
-                catch
-                    ph_row(iU) = 0;
-                    continue;
-                end
-
-                a2crit = (5/6) * (b2^2);
-
-                a1_row(iU) = a1;
-                a2_row(iU) = a2;
-                b2_row(iU) = b2;
-                cr_row(iU) = a2crit;
-
-                if ~isfinite(a1) || ~isfinite(a2) || ~isfinite(b2) || ~isfinite(a2crit)
-                    ph_row(iU) = 0;
-                else
-                    if a2 >= a2crit
-                        if a1 < 0
-                            ph_row(iU) = 4; % phase4
-                        else
-                            ph_row(iU) = 1; % phase1
-                        end
-                    else
-                        if a1 < 0
-                            ph_row(iU) = 3; % phase3
-                        else
-                            ph_row(iU) = 2; % phase2
-                        end
-                    end
-                end
+            if ~isfinite(chi_used) || ~isfinite(dop)
+                ph_row(iU) = 0;
+                continue;
             end
 
-            phase_map(iT,:) = ph_row;
-            a1_map(iT,:)    = a1_row;
-            a2_map(iT,:)    = a2_row;
-            b2_map(iT,:)    = b2_row;
-            crit_map(iT,:)  = cr_row;
-        end
-    else
-        for iT = 1:NT
-            T = T_list(iT);
-            for iU = 1:NU
-                chi_used = chi_map(iT,iU);
-                dop = dop_map(iT,iU);
+            C = coef.eval(T, dop, chi_used);
 
-                if ~isfinite(chi_used) || ~isfinite(dop)
-                    phase_map(iT,iU) = 0;
-                    continue;
-                end
-
-                try
-                    C  = coef.eval(T, dop, chi_used);
-                    a1 = C.a1; a2 = C.a2; b2 = C.b2;
-                catch
-                    phase_map(iT,iU) = 0;
-                    continue;
-                end
-
-                a2crit = (5/6) * (b2^2);
-
-                a1_map(iT,iU)   = a1;
-                a2_map(iT,iU)   = a2;
-                b2_map(iT,iU)   = b2;
-                crit_map(iT,iU) = a2crit;
-
-                if ~isfinite(a1) || ~isfinite(a2) || ~isfinite(b2) || ~isfinite(a2crit)
-                    phase_map(iT,iU) = 0;
-                else
-                    if a2 >= a2crit
-                        phase_map(iT,iU) = (a1 < 0) * 3 + 1; % a1<0 =>4, else1
-                    else
-                        phase_map(iT,iU) = (a1 < 0) * 1 + 2; % a1<0 =>3, else2
-                    end
-                end
+            try
+                F = free_energy(C.a1, C.b1, C.a2, C.b2, C.c2, par.lambda);
+            catch
+                ph_row(iU) = 0;
+                continue;
             end
+
+            ph_row(iU) = classify_point_(F, par.psi1_lim, par.psi2_lim, cls);
         end
+
+        phase_map(iT,:) = ph_row;
     end
 
     % ---------------- plot (aligned blocks + datatip) ----------------
-    fig = figure('Color','w','Name','Phase diagram (a2 boundary + a1 sign split)');
+    FS = 14; % <--- simplified: fixed font size, no par.fontSize
+    fig = figure('Color','w','Name','Phase diagram (folder-UI axis, aligned)');
     ax = axes(fig); %#ok<LAXES>
 
-    % colors: [0..4] => invalid + phase1..4
+    % colors: [0..4]
     c_invalid = [0.25 0.08 0.35];
     c1 = [0.20 0.55 0.95];
     c2 = [0.25 0.85 0.35];
@@ -208,14 +125,18 @@ function out = phase_diagram_FourPhaseTransition()
     c4 = [0.85 0.20 0.15];
     cmap = [c_invalid; c1; c2; c3; c4];
 
+    % compute edges so each block aligns with true coordinate bins
     U_edges = centers_to_edges_(U_list);
     T_edges = centers_to_edges_(T_list);
 
+    % C for surface: needs (NT+1) x (NU+1)
     Cgrid = nan(numel(T_edges), numel(U_edges));
     Cgrid(1:end-1, 1:end-1) = phase_map;
 
-    [UUe, TTe] = meshgrid(U_edges, T_edges);
-    surface(ax, UUe, TTe, zeros(size(UUe)), Cgrid, 'EdgeColor','none', 'FaceColor','flat');
+    [UU, TT] = meshgrid(U_edges, T_edges);
+
+    surface(ax, UU, TT, zeros(size(UU)), Cgrid, ...
+        'EdgeColor','none', 'FaceColor','flat');
     view(ax, 2);
     axis(ax, 'tight');
     set(ax,'YDir','normal');
@@ -223,8 +144,9 @@ function out = phase_diagram_FourPhaseTransition()
     colormap(ax, cmap);
     caxis(ax, [0 4]);
 
-    ax.XTickMode = 'auto';
-    ax.YTickMode = 'auto';
+    % ticks at centers
+    xticks(ax, U_list);
+    yticks(ax, T_list);
 
     if strcmpi(u_tag,'doping')
         xlabel(ax, '$\mathrm{doping}\ (10^{12}\ \mathrm{cm}^{-2})$','Interpreter','latex');
@@ -233,37 +155,25 @@ function out = phase_diagram_FourPhaseTransition()
     end
     ylabel(ax, '$T$','Interpreter','latex');
 
-    title(ax, sprintf('Phase map: $a_2 \\lessgtr \\frac{5}{6}b_2^2$ + split by $a_1<0$ | q=(%d,%d) | x=%s(folder)', ...
-        iq_pick, jq_pick, u_tag), 'Interpreter','latex','FontWeight','normal');
+    % <--- simplified: title uses Interpreter='none' (no LaTeX parse errors)
+    title(ax, sprintf('Phase map (real chi), q=(%d,%d), lambda=%.3g | x-axis=%s(folder)', ...
+        iq_pick, jq_pick, par.lambda, u_tag), ...
+        'Interpreter','none','FontWeight','normal');
 
-    set(ax,'FontSize',par.fontSize,'TickLabelInterpreter','latex','LineWidth',1,'TickDir','out','Box','on');
-
-    % boundary contour for a2-a2crit=0
-    hold(ax,'on');
-    [UUc, TTc] = meshgrid(U_list, T_list);
-    D = a2_map - crit_map;
-    D(~isfinite(D)) = NaN;
-    if any(isfinite(D(:)))
-        contour(ax, UUc, TTc, D, [0 0], 'k-', 'LineWidth', 1.2);
-    end
-    hold(ax,'off');
+    set(ax,'FontSize',FS,'TickLabelInterpreter','latex','LineWidth',1,'TickDir','out','Box','on');
 
     % legend (no colorbar)
     hold(ax,'on');
+    h0 = plot(ax, nan,nan,'s','MarkerFaceColor',c_invalid,'MarkerEdgeColor','none','MarkerSize',10);
     h1 = plot(ax, nan,nan,'s','MarkerFaceColor',c1,'MarkerEdgeColor','none','MarkerSize',10);
     h2 = plot(ax, nan,nan,'s','MarkerFaceColor',c2,'MarkerEdgeColor','none','MarkerSize',10);
     h3 = plot(ax, nan,nan,'s','MarkerFaceColor',c3,'MarkerEdgeColor','none','MarkerSize',10);
     h4 = plot(ax, nan,nan,'s','MarkerFaceColor',c4,'MarkerEdgeColor','none','MarkerSize',10);
-    h0 = plot(ax, nan,nan,'s','MarkerFaceColor',c_invalid,'MarkerEdgeColor','none','MarkerSize',10);
     hold(ax,'off');
 
     legend([h1 h2 h3 h4 h0], ...
-        {'phase1: $a_2 \ge \frac{5}{6}b_2^2,\ a_1\ge0$', ...
-         'phase2: $a_2 <  \frac{5}{6}b_2^2,\ a_1\ge0$', ...
-         'phase3: $a_2 <  \frac{5}{6}b_2^2,\ a_1<0$', ...
-         'phase4: $a_2 \ge \frac{5}{6}b_2^2,\ a_1<0$', ...
-         'invalid / missing'}, ...
-         'Interpreter','latex','Location','eastoutside');
+        {'phase1','phase2','phase3','phase4','invalid / missing'}, ...
+         'Interpreter','tex','Location','eastoutside');
 
     % datatip / hover
     dcm = datacursormode(fig);
@@ -273,31 +183,30 @@ function out = phase_diagram_FourPhaseTransition()
     % ---------------- save ----------------
     out_dir = fullfile(root, "..", "plot");
     if ~exist(out_dir,"dir"), mkdir(out_dir); end
-    out_png = fullfile(out_dir, sprintf("phase_a2crit_a1split_iq%d_jq%d_x%s.png", ...
-        iq_pick, jq_pick, u_tag));
+    out_png = fullfile(out_dir, sprintf("phase_realchi_folderUI_v4_aligned_iq%d_jq%d_lambda%.3g_x%s.png", ...
+        iq_pick, jq_pick, par.lambda, u_tag));
     exportgraphics(fig, out_png, 'Resolution', 300);
     fprintf("Saved phase: %s\n", out_png);
 
-    % output
+    % output struct
     out = struct();
-    out.phase_map  = phase_map;
-    out.T_list     = T_list;
-    out.U_list     = U_list;
-    out.u_tag      = u_tag;
-    out.chi_map    = chi_map;
+    out.phase_map = phase_map;
+    out.T_list = T_list;
+    out.U_list = U_list;
+    out.u_tag = u_tag;
+    out.chi_map = chi_map;
     out.doping_map = dop_map;
-    out.a1_map     = a1_map;
-    out.a2_map     = a2_map;
-    out.b2_map     = b2_map;
-    out.crit_map   = crit_map;
-    out.iq_pick    = iq_pick;
-    out.jq_pick    = jq_pick;
-    out.png        = out_png;
+    out.iq_pick = iq_pick;
+    out.jq_pick = jq_pick;
+    out.lambda = par.lambda;
+    out.cls = cls;
+    out.png = out_png;
 
     % ===================== nested: datatip callback =====================
     function txt = tip_cb_(~, evt)
-        pos = evt.Position;
-        x = pos(1); y = pos(2);
+        pos = evt.Position;   % [x y z]
+        x = pos(1);
+        y = pos(2);
 
         iu = find(x >= U_edges(1:end-1) & x < U_edges(2:end), 1, 'first');
         it = find(y >= T_edges(1:end-1) & y < T_edges(2:end), 1, 'first');
@@ -307,15 +216,11 @@ function out = phase_diagram_FourPhaseTransition()
             return;
         end
 
-        ph   = phase_map(it, iu);
-        T0   = T_list(it);
-        U0   = U_list(iu);
-        dop0 = dop_map(it, iu);
+        ph = phase_map(it, iu);
 
-        a10  = a1_map(it, iu);
-        a20  = a2_map(it, iu);
-        b20  = b2_map(it, iu);
-        cr0  = crit_map(it, iu);
+        T0 = T_list(it);
+        U0 = U_list(iu);
+        dop0 = dop_map(it, iu);
 
         if strcmpi(u_tag,'doping')
             Ustr = sprintf('doping(folder) = %.4f', U0);
@@ -326,43 +231,179 @@ function out = phase_diagram_FourPhaseTransition()
         txt = {
             sprintf('T = %.6g K', T0)
             Ustr
-            sprintf('phase = %d (%s)', ph, phase_name1234_(ph))
-            sprintf('doping(header) = %.6g', dop0)
-            sprintf('a1 = %.6g', a10)
-            sprintf('a2 = %.6g', a20)
-            sprintf('b2 = %.6g', b20)
-            sprintf('a2crit = (5/6)*b2^2 = %.6g', cr0)
+            sprintf('phase = %d', ph)          % <--- simplified: no phase_name_ helper
+            sprintf('doping = %.6g', dop0)
         };
     end
 end
 
 % =====================================================================
-% helpers: edges + phase name
+% One-point classifier (YOUR final rules, unchanged)
 % =====================================================================
-function edges = centers_to_edges_(c)
-    c = c(:);
-    if numel(c) == 1
-        dc = 1;
-        edges = [c(1)-dc/2; c(1)+dc/2];
+function ph = classify_point_(F, psi_lim, X_lim, cls)
+    ph = 0;
+
+    try
+        v0 = F(0,0);
+        if ~isfinite(v0), return; end
+    catch
         return;
     end
-    mid = (c(1:end-1) + c(2:end))/2;
-    edges = [c(1) - (mid(1)-c(1)); mid; c(end) + (c(end)-mid(end))];
+
+    ok0 = exists_local_min_in_box_(F, cls.origin_box, cls.origin_grid, cls.origin_refine_topK, ...
+                                  cls.origin_refine_jitter, cls.h, cls.eig_eps, psi_lim, X_lim);
+
+    if ok0
+        psi_list = linspace(-cls.origin_box, cls.origin_box, cls.Npsi_small);
+        hasX = false;
+        for k = 1:numel(psi_list)
+            psi0 = psi_list(k);
+            if psi0 < psi_lim(1) || psi0 > psi_lim(2), continue; end
+            if exists_nonzero_min_on_line_( @(X) F(psi0,X), X_lim, cls.Nx_small, cls.cluster_tol_1d, cls.X0_tol)
+                hasX = true;
+                break;
+            end
+        end
+        ph = 1 + hasX;
+        return;
+    end
+
+    psi_list = linspace(-cls.psi_line_max, cls.psi_line_max, cls.Npsi_wide);
+    for k = 1:numel(psi_list)
+        psi0 = psi_list(k);
+        if psi0 < psi_lim(1) || psi0 > psi_lim(2), continue; end
+        if exists_nonzero_min_on_line_( @(X) F(psi0,X), X_lim, cls.Nx_wide, cls.cluster_tol_1d, cls.X0_tol)
+            ph = 4;
+            return;
+        end
+    end
+
+    ph = 3;
 end
 
-function name = phase_name1234_(ph)
-    switch ph
-        case 1, name = 'phase1';
-        case 2, name = 'phase2';
-        case 3, name = 'phase3';
-        case 4, name = 'phase4';
-        otherwise, name = 'invalid/missing';
+function ok = exists_local_min_in_box_(F, box, Ng, topK, jitter, h, eig_eps, psi_lim, X_lim)
+    ok = false;
+
+    box_psi = [max(-box, psi_lim(1)), min(+box, psi_lim(2))];
+    box_X   = [max(-box, X_lim(1)),   min(+box, X_lim(2))];
+
+    psi = linspace(box_psi(1), box_psi(2), Ng);
+    X   = linspace(box_X(1),   box_X(2),   Ng);
+    [P, Q] = meshgrid(psi, X);
+
+    V = arrayfun(@(u,v) safe_eval_(F,u,v), P, Q);
+    V(~isfinite(V)) = 1e30;
+
+    mask = local_min_mask_2d_(V);
+    [rr,cc] = find(mask);
+    if isempty(rr), return; end
+
+    cand = [P(sub2ind(size(P), rr, cc)), Q(sub2ind(size(Q), rr, cc))];
+    Ec   = V(sub2ind(size(V), rr, cc));
+    [~,ix] = sort(Ec,'ascend');
+    ix = ix(1:min(topK, numel(ix)));
+    cand = cand(ix,:);
+
+    fopt = optimset('Display','off','MaxIter',200,'TolX',1e-10,'TolFun',1e-12);
+    for i = 1:size(cand,1)
+        x0 = cand(i,:) + jitter*randn(1,2);
+        x0(1) = min(max(x0(1), box_psi(1)), box_psi(2));
+        x0(2) = min(max(x0(2), box_X(1)),   box_X(2));
+
+        try
+            xhat = fminsearch(@(x) safe_eval_(F,x(1),x(2)), x0, fopt);
+        catch
+            continue;
+        end
+
+        if ~isfinite(xhat(1)) || ~isfinite(xhat(2)), continue; end
+        if xhat(1) < box_psi(1) || xhat(1) > box_psi(2), continue; end
+        if xhat(2) < box_X(1)   || xhat(2) > box_X(2),   continue; end
+
+        H = hessian_fd_(@(u,v) F(u,v), xhat(1), xhat(2), h);
+        ev = eig((H+H')/2);
+        if all(real(ev) > eig_eps)
+            ok = true;
+            return;
+        end
     end
+end
+
+function hasNonzero = exists_nonzero_min_on_line_(f1d, xlim, N, merge_tol, X0_tol)
+    hasNonzero = false;
+
+    x = linspace(xlim(1), xlim(2), N);
+    y = arrayfun(@(t) safe_eval_1d_(f1d,t), x);
+    y(~isfinite(y)) = 1e30;
+
+    if N < 3, return; end
+    ym1 = y(1:end-2);
+    y0  = y(2:end-1);
+    yp1 = y(3:end);
+    mask = (y0 <= ym1) & (y0 <= yp1);
+    idx = find(mask) + 1;
+    if isempty(idx), return; end
+
+    xc = sort(x(idx));
+    xuniq = xc(1);
+    for i = 2:numel(xc)
+        if abs(xc(i) - xuniq(end)) > merge_tol
+            xuniq(end+1) = xc(i); %#ok<AGROW>
+        end
+    end
+
+    hasNonzero = any(abs(xuniq) > X0_tol);
+end
+
+function v = safe_eval_(F, psi, X)
+    try
+        v = F(psi,X);
+        if ~isfinite(v), v = 1e30; end
+    catch
+        v = 1e30;
+    end
+end
+
+function v = safe_eval_1d_(f, x)
+    try
+        v = f(x);
+        if ~isfinite(v), v = 1e30; end
+    catch
+        v = 1e30;
+    end
+end
+
+function mask = local_min_mask_2d_(A)
+    [R,C] = size(A);
+    mask = false(R,C);
+    if R < 3 || C < 3, return; end
+
+    center = A(2:R-1, 2:C-1);
+    n1 = A(1:R-2, 2:C-1);
+    n2 = A(3:R  , 2:C-1);
+    n3 = A(2:R-1, 1:C-2);
+    n4 = A(2:R-1, 3:C  );
+    n5 = A(1:R-2, 1:C-2);
+    n6 = A(1:R-2, 3:C  );
+    n7 = A(3:R  , 1:C-2);
+    n8 = A(3:R  , 3:C  );
+
+    m = center <= n1 & center <= n2 & center <= n3 & center <= n4 & ...
+        center <= n5 & center <= n6 & center <= n7 & center <= n8;
+
+    mask(2:R-1, 2:C-1) = m;
+end
+
+function H = hessian_fd_(f, x, y, h)
+    f00 = f(x,y);
+    fxx = (f(x+h,y) - 2*f00 + f(x-h,y))/h^2;
+    fyy = (f(x,y+h) - 2*f00 + f(x,y-h))/h^2;
+    fxy = (f(x+h,y+h) - f(x+h,y-h) - f(x-h,y+h) + f(x-h,y-h)) / (4*h^2);
+    H = [fxx, fxy; fxy, fyy];
 end
 
 % =====================================================================
 % Folder-UI loader (mu/doping from path), doping from header, chi from table
-% (keep exactly as your previous version)
 % =====================================================================
 function [G, dbg] = load_chi_grid_folderUI_debug_(root_dir, iq_pick, jq_pick, dbg)
     root_dir = string(root_dir);
@@ -650,7 +691,7 @@ function C = detect_cols_(M)
 end
 
 function print_debug_summary_folderUI_(dbg_out, dbg_cfg, G)
-    fprintf("\n================ DEBUG SUMMARY (phase a2crit + a1 split) ================\n");
+    fprintf("\n================ DEBUG SUMMARY (phase v4 folderUI) ================\n");
     fprintf("files_total=%d ok=%d path_fail=%d header_fail=%d read_fail=%d cols_fail=%d match_fail=%d | axis=%s\n", ...
         dbg_out.files_total, dbg_out.ok, dbg_out.fail_path, dbg_out.fail_header, dbg_out.fail_read, dbg_out.fail_cols, dbg_out.fail_match, G.u_tag);
 
@@ -687,4 +728,18 @@ function print_debug_summary_folderUI_(dbg_out, dbg_cfg, G)
     end
 
     fprintf("==================================================================\n\n");
+end
+
+% =====================================================================
+% helpers: edges
+% =====================================================================
+function edges = centers_to_edges_(c)
+    c = c(:);
+    if numel(c) == 1
+        dc = 1;
+        edges = [c(1)-dc/2; c(1)+dc/2];
+        return;
+    end
+    mid = (c(1:end-1) + c(2:end))/2;
+    edges = [c(1) - (mid(1)-c(1)); mid; c(end) + (c(end)-mid(end))];
 end
