@@ -1,4 +1,4 @@
-function H = hysteresis_realchi_T_SinglePolar_LorentzBroadening2()
+function H = hysteresis_no_disturbation()
 clc; close all;
 
 par  = make_realchi_params(true);
@@ -7,7 +7,7 @@ coef = make_realchi_coeff(par);
 % =========================
 % USER SETTINGS
 % =========================
-T_list = [2];          % [] = auto detect all T folders; or e.g. [4 5 6 6.5]
+T_list = 0:6.5:1;          % [] = auto detect all T folders; or e.g. [4 5 6 6.5]
 artificial_polar_list = 0:0.2:0;   % meV, artificial polar scan
 
 plot_a1  = true;
@@ -182,14 +182,18 @@ for i = 1:N
     chi_used = chi_of_dop(dop);
     C = coef.eval(T_target, dop, chi_used);
 
-    F = free_energy(C.a1, C.b1, C.a2, C.b2, C.c2, par.lambda);
-    mins = find_local_minima_2d_denseSeeds_(F, par.psi1_lim, par.psi2_lim, scan, opt);
-
-    if isempty(mins)
-        [p1,p2,~] = minimize_free_energy(C.a1,C.b1,C.a2,C.b2,C.c2,par.lambda, prev(1),prev(2), false);
-        pick = [p1,p2];
+    if C.a1 > 0
+        pick = [0, 0];
     else
-        pick = pick_closest_min_(mins, prev);
+        F = free_energy(C.a1, C.b1, C.a2, C.b2, C.c2, par.lambda);
+        mins = find_local_minima_2d_denseSeeds_(F, par.psi1_lim, par.psi2_lim, scan, opt);
+
+        if isempty(mins)
+            [p1,p2,~] = minimize_free_energy(C.a1,C.b1,C.a2,C.b2,C.c2,par.lambda, prev(1),prev(2), false);
+            pick = [p1,p2];
+        else
+            pick = pick_closest_min_(mins, prev);
+        end
     end
 
     psi_f(i,:) = pick;

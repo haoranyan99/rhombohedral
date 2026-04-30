@@ -24,7 +24,7 @@ function freeEnergy_two_curves_slider()
     par_base = make_realchi_params(true);
 
     % ---- UI defaults ----
-    T_fixed_default = 6.5;
+    T_fixed_default = 2;
 
     alpha_min = 0.01;
     alpha_max = max(5.0, 2.0 * par_base.Lat_alpha);

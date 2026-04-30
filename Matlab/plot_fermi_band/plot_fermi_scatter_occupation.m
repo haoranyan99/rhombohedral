@@ -18,6 +18,8 @@ function plot_fermi_scatter_binary()
     % display range: only plot this region
     kx_range = [-1.6, -1.35];
     ky_range = [0.72, 1.00];
+%     kx_range = [-2, 2];
+%     ky_range = [-2, 2];
 
     % marker style
     marker_size = 18;

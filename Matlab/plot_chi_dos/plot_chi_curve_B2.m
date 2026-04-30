@@ -28,17 +28,17 @@ D_root = string(D_root);
 fprintf("Root folder:\n  %s\n", D_root);
 
 % ---- pick ONE temperature ----
-T_target = 4;        % K
+T_target = 6.5;        % K
 T_tol    = 1e-6;     % K tolerance
 
 % ---- pick ONE (iq,jq) ----
-iq_pick = -133;
-jq_pick = -133;
+iq_pick = 3;
+jq_pick = -3;
 
 % ---- AND filters; [] => disable ----
-polar_range = [0, 2];       % meV; [] => all polar
-mu_range    = [0, 1000];    % eV;  [] => all mu
-dop_range   = [];           % [] => all doping
+polar_range = 0:1:6;       % meV; [] => all polar
+mu_range    = [];    % eV;  [] => all mu
+dop_range   = [-2.5:0];           % [] => all doping
 
 % ---- IMPORTANT: speed switch ----
 % If true: ONLY scan chi*.txt under folders named polar_meV*

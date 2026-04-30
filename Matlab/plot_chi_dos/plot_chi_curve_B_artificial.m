@@ -29,16 +29,16 @@ T_target = 6.5;        % K
 T_tol    = 1e-6;     % K tolerance
 
 % ---- pick ONE (iq,jq) ----
-iq_pick = -1;
-jq_pick = -1;
+iq_pick = 3;
+jq_pick = -3;
 
 % ---- baseline data filters (AND); [] => disable ----
-mu_range    = [0, 1000];   % unit depends on mu_unit_in_header
-dop_range   = [];          % [] => all doping
+mu_range    = [];   % unit depends on mu_unit_in_header
+dop_range   = [-2.5,0];          % [] => all doping
 
 % ---- USER SPECIFIED polar list (meV) to construct artificial curves ----
 % (include 0 if you want, it will reproduce baseline)
-polar_list = 0:.5:20;
+polar_list = 0:1:6;
 
 % ---- unit of mu in header ----
 % "eV": polar_meV will be converted to eV when shifting (meV * 1e-3)

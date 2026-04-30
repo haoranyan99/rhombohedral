@@ -12,9 +12,9 @@
    
     "bareband": {
       "model":"sk",
-      "Dfield_eV": 0.08,
-      "GMKG": { "Nk_seg": 1000, "frac_local":0.20 },
-      "localK_MKKp": { "Nk_seg": 1000, "frac_local":0.20 },
+      "Dfield_eV": -0.012,
+      "GMKG": { "Nk_seg": 1000, "frac_local":0.10 },
+      "localK_MKKp": { "Nk_seg": 1000, "frac_local":0.10 },
       "output_suffix": "_Nk1000"
     },
    
@@ -23,16 +23,16 @@
       "DfieldList_meVnm^-1": {"min": -160, "max": 10000, "num": 1},
       "kmesh": { "type": "BZ", "Nk": 1000, "dk_frac": 0.004},
       "T_K": 0,
-      "dos": {"e_low": 0.4000, "e_high": 0.9000, "num_e": 5001, "eta": 0.002}
+      "dos": {"e_low": 0.6000, "e_high": 1.0000, "num_e": 4001, "eta": 0.002}
     },
    
     "calculate_fermi": {
       "model": "sk",
-      "mode": "mu",
-      "Dfield_eV": -0.012,
-      "kmesh": { "type":"BZ", "Nk":200, "dk_frac": 0.0003},
-      "temperatureList_K": {"min": 6.5, "max": 8.0, "num": 1}, 
-      "dopingList_10^12cm^-2": {"min": 0, "max": 1, "num": 11},
+      "mode": "doping",
+      "Dfield_eV": 0.012,
+      "kmesh": { "type":"BZ", "Nk":400, "dk_frac": 0.0003}, 
+      "temperatureList_K": {"min": 0, "max": 8.0, "num": 1},
+      "dopingList_10^12cm^-2": {"min": -2, "max": 1, "num": 16},
       "muList_eV": {"min": 0.5000, "max": 0.8000, "num": 301},
       "output_suffix": "200"
     },
