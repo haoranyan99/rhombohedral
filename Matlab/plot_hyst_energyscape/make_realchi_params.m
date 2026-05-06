@@ -79,7 +79,7 @@ function par = make_realchi_params(noAsk)
     %   [max(min(dop0), min(scan_start,scan_end)), ...
     %    min(max(dop0), max(scan_start,scan_end))]
     par.hyst.scan_start = -2.5;
-    par.hyst.scan_end   = 0;
+    par.hyst.scan_end   = -.163;
 
     % --- grid type: choose ONE ---
     par.hyst.grid_mode = "N";        % "N" or "step"

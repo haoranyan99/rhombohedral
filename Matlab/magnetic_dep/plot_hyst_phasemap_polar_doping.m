@@ -8,8 +8,15 @@ T_target = 6.5;          % fixed temperature
 quantity = "psi";        % "psi" or "X"
 FS = 16;
 
-doping_N = 300;          % common doping grid number
-use_abs_diff = true;     % true: |fwd-bwd|, false: fwd-bwd
+doping_N = 300;
+use_abs_diff = true;
+
+% ---- manual plot range ----
+xlim_plot = [-1.6, -1];     % doping range
+ylim_plot = [0, 6.0];         % polar range, meV
+
+% ---- colormap setting ----
+white_pos = 0.23;             % white position in colormap
 
 default_dir = 'E:\rg_master\rhombohedral\Matlab\hyst_data';
 
@@ -77,8 +84,12 @@ for i = 1:numel(E)
     all_dop_max = min(all_dop_max, min(max(xf), max(xb)));
 end
 
+% also restrict by manual x range
+all_dop_min = max(all_dop_min, xlim_plot(1));
+all_dop_max = min(all_dop_max, xlim_plot(2));
+
 if ~isfinite(all_dop_min) || ~isfinite(all_dop_max) || all_dop_min >= all_dop_max
-    error("Cannot build common doping range.");
+    error("Cannot build common doping range inside xlim_plot.");
 end
 
 dop_grid = linspace(all_dop_min, all_dop_max, doping_N);
@@ -133,16 +144,49 @@ if isempty(polar)
 end
 
 % =========================
+% Restrict display range
+% =========================
+maskP = polar >= ylim_plot(1) & polar <= ylim_plot(2);
+maskD = dop_grid >= xlim_plot(1) & dop_grid <= xlim_plot(2);
+
+polar_show = polar(maskP);
+dop_show   = dop_grid(maskD);
+Z_show     = Z(maskP, maskD);
+
+if isempty(polar_show) || isempty(dop_show) || all(~isfinite(Z_show(:)))
+    error("No valid data inside xlim_plot / ylim_plot.");
+end
+
+% =========================
+% Color range from displayed data only
+% =========================
+if use_abs_diff
+    zmin = 0;
+else
+    zmin = min(Z_show(:), [], 'omitnan');
+end
+
+zmax = max(Z_show(:), [], 'omitnan');
+
+if ~(zmax > zmin)
+    zmax = zmin + eps;
+end
+
+% =========================
 % Plot
 % =========================
 figure('Color','w','Position',[120 120 850 620]);
 
-imagesc(dop_grid, polar, Z);
+imagesc(dop_show, polar_show, Z_show);
 set(gca, 'YDir', 'normal');
 
-colormap(flipud(hot));
+colormap(red_white_blue_skewed(256, white_pos));
+caxis([zmin, zmax]);
+
 cb = colorbar;
 cb.TickLabelInterpreter = 'latex';
+cb.TickDirection = 'in';
+cb.LineWidth = 1.2;
 
 if use_abs_diff
     cb.Label.String = sprintf('$||%s|_{\\rm fwd} - |%s|_{\\rm bwd}|$', quantity, quantity);
@@ -161,14 +205,19 @@ set(gca, ...
     'FontSize', FS, ...
     'TickLabelInterpreter','latex', ...
     'LineWidth', 1.3, ...
-    'TickDir','out', ...
+    'TickDir','in', ...
     'Box','on');
+
+xlim(xlim_plot);
+ylim(ylim_plot);
+grid off;
 
 fprintf("\nLoaded: %s\n", matfile);
 fprintf("T = %.6g K\n", T_target);
 fprintf("Quantity = %s\n", quantity);
-fprintf("Doping range = [%.6g, %.6g]\n", dop_grid(1), dop_grid(end));
-fprintf("Polar range = [%.6g, %.6g]\n", min(polar), max(polar));
+fprintf("Displayed doping range = [%.6g, %.6g]\n", dop_show(1), dop_show(end));
+fprintf("Displayed polar range = [%.6g, %.6g]\n", min(polar_show), max(polar_show));
+fprintf("Color range from displayed data = [%.6g, %.6g]\n", zmin, zmax);
 
 end
 
@@ -209,5 +258,33 @@ switch lower(string(quantity))
     otherwise
         error("quantity must be psi or X.");
 end
+
+end
+
+function cmap = red_white_blue_skewed(N, white_pos)
+
+if nargin < 1
+    N = 256;
+end
+if nargin < 2
+    white_pos = 0.05;
+end
+
+blue  = [45, 75, 145] / 255;
+white = [1, 1, 1];
+red   = [235, 70, 50] / 255;
+
+n_blue = max(2, round(N * white_pos));
+n_red  = N - n_blue;
+
+c1 = [linspace(blue(1),  white(1), n_blue)', ...
+      linspace(blue(2),  white(2), n_blue)', ...
+      linspace(blue(3),  white(3), n_blue)'];
+
+c2 = [linspace(white(1), red(1), n_red)', ...
+      linspace(white(2), red(2), n_red)', ...
+      linspace(white(3), red(3), n_red)'];
+
+cmap = [c1; c2];
 
 end

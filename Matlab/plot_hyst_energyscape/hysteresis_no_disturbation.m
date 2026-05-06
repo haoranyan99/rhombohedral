@@ -7,8 +7,10 @@ coef = make_realchi_coeff(par);
 % =========================
 % USER SETTINGS
 % =========================
-T_list = 0:6.5:1;          % [] = auto detect all T folders; or e.g. [4 5 6 6.5]
-artificial_polar_list = 0:0.2:0;   % meV, artificial polar scan
+T_list = 6.5:6.5:10;          % [] = auto detect all T folders; or e.g. [4 5 6 6.5]
+T_list = [6.5];
+artificial_polar_list = 4:0.2:0;   % meV, artificial polar scan
+artificial_polar_list = [4 6];
 
 plot_a1  = true;
 % plot_a1  = false;
@@ -281,47 +283,84 @@ xhi = max(R.dop_fwd);
 title_info = sprintf('$T=%.3f\\,\\mathrm{K},\\; polar=%.3f\\,\\mathrm{meV},\\; q=(%d,%d)$', ...
     R.T, R.artificial_polar, R.iq_pick, R.jq_pick);
 
+line_f = '-';
+line_b = '--';
+
 if plot_a1
     figure('Color','w','Position',[80 80 720 560]);
-    plot(R.dop_fwd, R.a1_fwd, 'k-', 'LineWidth',2); hold on;
-    plot(R.dop_bwd, R.a1_bwd, 'k--', 'LineWidth',2);
-    yline(0,'--','LineWidth',1.2);
-    grid on; box on; xlim([xlo xhi]);
+    ax = axes; hold(ax,'on'); box(ax,'on');
 
-    xlabel('doping $(10^{12}\,\mathrm{cm}^{-2})$','Interpreter','latex');
-    ylabel('$a_1$','Interpreter','latex');
-    title(['$a_1$ vs doping, ' title_info], 'Interpreter','latex');
-    legend({'forward','backward'},'Interpreter','latex','Location','best');
+    plot(ax, R.dop_fwd, R.a1_fwd, line_f, ...
+        'Color','k', 'LineWidth',2.0);
+    plot(ax, R.dop_bwd, R.a1_bwd, line_b, ...
+        'Color','k', 'LineWidth',2.0);
 
-    set(gca,'FontSize',fs,'TickLabelInterpreter','latex','LineWidth',1.2,'TickDir','out');
+    yline(ax, 0, '--', 'LineWidth',1.2, 'Color',[0.4 0.4 0.4]);
+
+    xlim(ax,[xlo xhi]);
+    grid(ax,'off');
+
+    xlabel(ax,'doping $(10^{12}\,\mathrm{cm}^{-2})$','Interpreter','latex');
+    ylabel(ax,'$a_1$','Interpreter','latex');
+    title(ax,['$a_1$ vs doping, ' title_info], ...
+        'Interpreter','latex','FontWeight','normal');
+
+    set(ax, ...
+        'FontSize',fs, ...
+        'TickLabelInterpreter','latex', ...
+        'LineWidth',1.3, ...
+        'TickDir','in', ...
+        'Box','on');
 end
 
 if plot_psi
     figure('Color','w','Position',[120 120 720 560]);
-    plot(R.dop_fwd, R.psi_f_abs_plot(:,1), '-', 'LineWidth',2); hold on;
-    plot(R.dop_bwd, R.psi_b_abs_plot(:,1), '--', 'LineWidth',2);
-    grid on; box on; xlim([xlo xhi]);
+    ax = axes; hold(ax,'on'); box(ax,'on');
 
-    xlabel('doping $(10^{12}\,\mathrm{cm}^{-2})$','Interpreter','latex');
-    ylabel('$|\psi|$','Interpreter','latex');
-    title(['$|\psi|$ hysteresis, ' title_info], 'Interpreter','latex');
-    legend({'forward','backward'},'Interpreter','latex','Location','best');
+    plot(ax, R.dop_fwd, R.psi_f_abs_plot(:,1), line_f, ...
+        'LineWidth',2.0);
+    plot(ax, R.dop_bwd, R.psi_b_abs_plot(:,1), line_b, ...
+        'LineWidth',2.0);
 
-    set(gca,'FontSize',fs,'TickLabelInterpreter','latex','LineWidth',1.2,'TickDir','out');
+    xlim(ax,[xlo xhi]);
+    grid(ax,'off');
+
+    xlabel(ax,'doping $(10^{12}\,\mathrm{cm}^{-2})$','Interpreter','latex');
+    ylabel(ax,'$|\psi|$','Interpreter','latex');
+    title(ax,['$|\psi|$ hysteresis, ' title_info], ...
+        'Interpreter','latex','FontWeight','normal');
+
+    set(ax, ...
+        'FontSize',fs, ...
+        'TickLabelInterpreter','latex', ...
+        'LineWidth',1.3, ...
+        'TickDir','in', ...
+        'Box','on');
 end
 
 if plot_X
     figure('Color','w','Position',[160 160 720 560]);
-    plot(R.dop_fwd, R.psi_f_abs_plot(:,2), '-', 'LineWidth',2); hold on;
-    plot(R.dop_bwd, R.psi_b_abs_plot(:,2), '--', 'LineWidth',2);
-    grid on; box on; xlim([xlo xhi]);
+    ax = axes; hold(ax,'on'); box(ax,'on');
 
-    xlabel('doping $(10^{12}\,\mathrm{cm}^{-2})$','Interpreter','latex');
-    ylabel('$|X|$','Interpreter','latex');
-    title(['$|X|$ hysteresis, ' title_info], 'Interpreter','latex');
-    legend({'forward','backward'},'Interpreter','latex','Location','best');
+    plot(ax, R.dop_fwd, R.psi_f_abs_plot(:,2), line_f, ...
+        'LineWidth',2.0);
+    plot(ax, R.dop_bwd, R.psi_b_abs_plot(:,2), line_b, ...
+        'LineWidth',2.0);
 
-    set(gca,'FontSize',fs,'TickLabelInterpreter','latex','LineWidth',1.2,'TickDir','out');
+    xlim(ax,[xlo xhi]);
+    grid(ax,'off');
+
+    xlabel(ax,'doping $(10^{12}\,\mathrm{cm}^{-2})$','Interpreter','latex');
+    ylabel(ax,'$|X|$','Interpreter','latex');
+    title(ax,['$|X|$ hysteresis, ' title_info], ...
+        'Interpreter','latex','FontWeight','normal');
+
+    set(ax, ...
+        'FontSize',fs, ...
+        'TickLabelInterpreter','latex', ...
+        'LineWidth',1.3, ...
+        'TickDir','in', ...
+        'Box','on');
 end
 
 end
