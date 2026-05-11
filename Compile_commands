@@ -48,12 +48,26 @@ mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
   Executables/calculate_fermi.cpp \
   -o calculate_fermi
 
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_chi_v2.cpp \
+  -o calculate_chi_v2
 
-mpirun -np 4 ./test_dos config.json
-mpirun -np 4 ./calculate_chi config.json
-mpirun -np 4 ./test_RG_fermi_patch config.json
-mpirun -np 4 ./calculate_fermi config.json
 
+mpiexec -np 4 ./test_dos config.json
+
+mpiexec -np 4 ./test_RG_fermi_patch config.json
+mpiexec -n 4 ./calculate_fermi config.json
+
+mpiexec -np 4 ./calculate_chi config.json
+mpiexec -n 4 ./calculate_chi_v2.exe config.json
 
 # ============================================================
 # macOS — Serial (no MPI) — clang++

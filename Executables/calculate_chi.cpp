@@ -1,11 +1,15 @@
-// File: Executables/calculate_chi.cpp
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cmath>
+#include <complex>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <memory>
-#include <filesystem>
-#include <cmath>
 
 #ifdef USE_MPI
   #include <mpi.h>
@@ -14,11 +18,8 @@
 #include "Util/MPI/mpi.h"
 #include "Util/Config/config_reader.h"
 #include "Util/IO/rg_io.h"
-#include "Util/IO/rg_fermiPatch.h"
+
 #include "PhysStruct/RG_Structure.h"
-#include "Source/Models/RG_ModelBase.h"
-#include "Source/Models/RG_SKModel.h"
-#include "Source/Models/RG_KPModel.h"
 #include "MeasureEngines/cal_susceptibility.h"
 
 namespace fs = std::filesystem;
@@ -27,38 +28,55 @@ namespace {
 
 inline std::string to_lower(std::string s)
 {
-    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+    for (char& c : s) {
+        c = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(c))
+        );
+    }
     return s;
 }
 
-// pick newest fermiPatch_*.txt in a folder
-inline std::string newest_fermiPatch_in_dir(const fs::path& dir)
+inline std::string newest_fermiPatch_bin_in_dir(const fs::path& dir)
 {
-    if (!fs::exists(dir) || !fs::is_directory(dir)) return {};
+    if (!fs::exists(dir) || !fs::is_directory(dir)) {
+        return {};
+    }
 
-    fs::file_time_type best_t{};
-    fs::path best_p;
-    bool has = false;
+    fs::file_time_type best_time{};
+    fs::path best_path;
+    bool found = false;
 
     for (const auto& ent : fs::directory_iterator(dir)) {
         if (!ent.is_regular_file()) continue;
+
         const fs::path p = ent.path();
-        if (p.extension() != ".txt") continue;
-        const std::string fn = p.filename().string();
-        if (fn.rfind("fermiPatch_", 0) != 0) continue;
+
+        if (p.extension() != ".bin") continue;
+
+        const std::string fname = p.filename().string();
+
+        if (fname.rfind("fermiPatch_", 0) != 0) continue;
 
         const auto t = fs::last_write_time(p);
-        if (!has || t > best_t) { best_t = t; best_p = p; has = true; }
+
+        if (!found || t > best_time) {
+            best_time = t;
+            best_path = p;
+            found = true;
+        }
     }
-    return has ? best_p.string() : std::string{};
+
+    return found ? best_path.string() : std::string{};
 }
 
-inline void print_sep(int rank)
+inline std::string make_mu_tag(double mu)
 {
-    if (rank == 0) std::cout << "------------------------------------------------------------\n";
+    if (std::abs(mu) < 5e-13) mu = 0.0;
+    return std::string("mu") + rgio::tag6(mu);
 }
 
 } // namespace
+
 
 int main(int argc, char** argv)
 {
@@ -66,140 +84,244 @@ int main(int argc, char** argv)
     MPI_Init(&argc, &argv);
 #endif
 
-    int rank = 0, nprocs = 1;
+    int rank = 0;
+    int nprocs = 1;
     rgmpi::rank_size(rank, nprocs);
 
     try {
-        const std::string config_file = (argc > 1) ? std::string(argv[1]) : "config.json";
+        const std::string config_file =
+            (argc > 1) ? std::string(argv[1]) : "config.json";
 
-        config::CalChiConfig cfg = config::read_cal_chi_config(config_file);
-        const auto para = config::read_rg_para(cfg.para_file);
+        config::CalChiConfig cfg =
+            config::read_cal_chi_config(config_file);
 
-        cfg.mode     = cfg.mode.empty()     ? std::string("doping") : to_lower(cfg.mode);
-        cfg.boundary = cfg.boundary.empty() ? std::string("open")   : to_lower(cfg.boundary);
+        const auto para =
+            config::read_rg_para(cfg.para_file);
 
-        if (cfg.mode != "doping" && cfg.mode != "mu")
-            rgmpi::abort_all("calculate_chi: cfg.mode must be \"doping\" or \"mu\"");
+        cfg.model    = to_lower(cfg.model);
+        cfg.boundary = to_lower(cfg.boundary);
 
-        const bool periodic = (cfg.boundary == "periodic");
+        const bool periodic =
+            (cfg.boundary == "periodic");
 
-        if (cfg.temperature_list.empty()) rgmpi::abort_all("calculate_chi: empty temperature_list");
-        if (cfg.polar_list.empty())       rgmpi::abort_all("calculate_chi: empty polar_list");
-        if (cfg.fermi_patch_path.empty()) rgmpi::abort_all("calculate_chi: empty fermi_patch_path");
+        rg::RG_Structure st(
+            para.layer_num,
+            para.pressure,
+            para.a0,
+            para.d0,
+            para.vacuum
+        );
 
-        if (cfg.mode == "doping") {
-            if (cfg.doping_list.empty()) rgmpi::abort_all("calculate_chi: empty doping_list (mode=doping)");
-        } else {
-            if (cfg.mu_list.empty()) rgmpi::abort_all("calculate_chi: empty mu_list (mode=mu)");
-        }
-
-        // structure + model (header info only)
-        const double pressure = 0.0;
-        rg::RG_Structure st(para.layer_num, pressure, para.a0, para.d0, para.vacuum);
-
-        std::unique_ptr<rg::RG_ModelBase> model_ptr;
-        if (cfg.model == "sk")      model_ptr = std::make_unique<rg::RG_SKModel>(st, cfg.para_file);
-        else if (cfg.model == "kp") model_ptr = std::make_unique<rg::RG_KPModel>(st);
-        else rgmpi::abort_all("calculate_chi: model must be \"sk\" or \"kp\"");
-
-        rg::RG_ModelBase& model = *model_ptr;
-        if (cfg.model == "sk") {
-            if (auto* sk = dynamic_cast<rg::RG_SKModel*>(model_ptr.get()))
-                sk->ensure_hoppings_cached();
-        }
-        model.set_Dfield(cfg.Dfield_eV);
-
-        const std::vector<double>& X_list = (cfg.mode == "mu") ? cfg.mu_list : cfg.doping_list;
-        const std::string run_stamp = rgio::make_time_stamp("chi");
+        const std::string run_stamp =
+            rgio::make_time_stamp("chi");
 
         for (double polar_mu : cfg.polar_list) {
-            if (!std::isfinite(polar_mu)) continue;
 
             const fs::path run_dir =
-                (cfg.data_dir.empty() ? fs::path("data") : fs::path(cfg.data_dir))
-                / (std::string("chi_") + cfg.model + "_" + cfg.mode + "_" + cfg.output_suffix)
+                fs::path(cfg.data_dir)
+                / (
+                    std::string("chi_")
+                  + cfg.model
+                  + "_mu_"
+                  + cfg.output_suffix
+                )
                 / (std::string("D") + rgio::tag3(cfg.Dfield_eV))
-                / (std::string("polar_meV") + rgio::tag3(1000.0 * polar_mu));
+                / (
+                    std::string("polar_meV")
+                  + rgio::tag3(1000.0 * polar_mu)
+                );
 
             if (rank == 0) {
-                std::error_code ec;
-                fs::create_directories(run_dir, ec);
-                if (ec) throw std::runtime_error("Failed to create output directory: " + run_dir.string());
-                std::cout << "[chi] polar_meV=" << rgio::tag3(1000.0 * polar_mu)
-                          << "  out=" << run_dir.string() << "\n";
+                fs::create_directories(run_dir);
+
+                std::cout << "=== calculate_chi from fermiPatch bin ===\n";
+                std::cout << "config          = " << config_file << "\n";
+                std::cout << "model           = " << cfg.model << "\n";
+                std::cout << "input_format    = bin\n";
+                std::cout << "boundary        = " << cfg.boundary << "\n";
+                std::cout << "Dfield_eV       = " << cfg.Dfield_eV << "\n";
+                std::cout << "polar_meV       = " << 1000.0 * polar_mu << "\n";
+                std::cout << "q integer       = (" << cfg.iq << ", "
+                          << cfg.jq << ")\n";
+                std::cout << "eta             = " << cfg.eta << "\n";
+                std::cout << "use_form_factor = "
+                          << (cfg.use_form_factor ? "true" : "false")
+                          << "\n";
+                std::cout << "fermi root      = " << cfg.fermi_patch_path << "\n";
+                std::cout << "out root        = " << run_dir.string() << "\n";
+                std::cout << "MPI ranks       = " << nprocs << "\n";
             }
+
             rgmpi::barrier();
 
-            for (double T : cfg.temperature_list) {
-                const fs::path T_src = fs::path(cfg.fermi_patch_path) / (std::string("T") + rgio::tag3(T));
+            for (double T_K : cfg.temperature_list) {
 
-                for (double x : X_list) {
-                    print_sep(rank);
+                const fs::path T_src =
+                    fs::path(cfg.fermi_patch_path)
+                    / (std::string("T") + rgio::tag3(T_K));
 
-                    // ---- print point header ----
-                    if (rank == 0) {
-                        if (cfg.mode == "mu") {
-                            std::cout << "[pt] T=" << rgio::tag3(T)
-                                      << "  polar_meV=" << rgio::tag3(1000.0 * polar_mu)
-                                      << "  mu=" << rgio::tag6(x) << "\n";
-                        } else {
-                            std::cout << "[pt] T=" << rgio::tag3(T)
-                                      << "  polar_meV=" << rgio::tag3(1000.0 * polar_mu)
-                                      << "  doping=" << rgio::tag4(x) << "\n";
-                        }
+                for (double mu_raw : cfg.mu_list) {
+
+                    double mu = mu_raw;
+                    if (std::abs(mu) < 5e-13) {
+                        mu = 0.0;
                     }
 
-                    // ---- locate base fermiPatch ----
-                    const fs::path x_src = (cfg.mode == "mu")
-                        ? (T_src / (std::string("mu")     + rgio::tag6(x)))
-                        : (T_src / (std::string("doping") + rgio::tag4(x)));
+                    const fs::path mu_src =
+                        T_src / make_mu_tag(mu);
 
-                    const std::string base_file = newest_fermiPatch_in_dir(x_src);
-                    if (base_file.empty()) {
-                        if (rank == 0) std::cout << "[base] MISS  dir=" << x_src.string() << "\n";
+                    if (rank == 0) {
+                        std::cout << "------------------------------------------------------------\n";
+                        std::cout << "[pt] T=" << rgio::tag3(T_K)
+                                  << " mu=" << rgio::tag6(mu)
+                                  << "\n";
+                    }
+
+                    const std::string fermi_bin =
+                        newest_fermiPatch_bin_in_dir(mu_src);
+
+                    if (fermi_bin.empty()) {
+                        if (rank == 0) {
+                            std::cout << "[base] MISS dir="
+                                      << mu_src.string()
+                                      << "\n";
+                        }
+
                         rgmpi::barrier();
                         continue;
                     }
-                    if (rank == 0) std::cout << "[base] FOUND file=" << base_file << "\n";
-                    rgmpi::barrier();
-
-                    // ---- output dirs ----
-                    const fs::path out_T = run_dir / (std::string("T") + rgio::tag3(T));
-                    const fs::path out_x = (cfg.mode == "doping")
-                        ? (out_T / (std::string("doping") + rgio::tag4(x)))
-                        : (out_T / (std::string("mu")     + rgio::tag6(x)));
 
                     if (rank == 0) {
-                        std::error_code ec;
-                        fs::create_directories(out_x, ec);
-                        if (ec) throw std::runtime_error("Failed to create output directory: " + out_x.string());
+                        std::cout << "[base] FOUND file="
+                                  << fermi_bin
+                                  << "\n";
                     }
+
                     rgmpi::barrier();
 
-                    // ---- compute chi ----
-                    rgio::cal_chi_param param;
-                    param.q_range = { cfg.iq_min, cfg.iq_max, cfg.jq_min, cfg.jq_max };
-                    param.polar_mu = polar_mu;
-                    param.boundary_periodic = periodic;
-                    param.eta = cfg.eta;
-                    param.T_K = T;
-                    if (cfg.mode == "doping") param.doping = x;
-                    else                      param.Ef     = x;
+                    const fs::path out_T =
+                        run_dir / (std::string("T") + rgio::tag3(T_K));
 
-                    rgio::cal_chi_result res = rg::cal_chi_grid_from_fermiPatch(base_file, param);
-                    core::GridData& qgrid = res.qgrid;
+                    const fs::path out_mu =
+                        out_T / make_mu_tag(mu);
 
                     if (rank == 0) {
-                        const double EF      = param.Ef;
-                        const double doping  = res.doping;
-                        const double filling = res.filling;
+                        fs::create_directories(out_mu);
+                    }
 
-                        const std::string hdr =
-                            rgio::write_cal_chi_header(cfg, st, model, param.T_K, EF, doping, filling, polar_mu);
+                    rgmpi::barrier();
 
-                        const fs::path out_path = out_x / (std::string("chi_") + run_stamp + ".txt");
-                        rgio::write_chi_txt(out_path.string(), qgrid, hdr);
-                        std::cout << "[out] Wrote: " << out_path.string() << "\n";
+                    rgio::cal_chi_param param;
+
+                    param.iq = cfg.iq;
+                    param.jq = cfg.jq;
+
+                    param.T_K = T_K;
+                    param.Ef  = mu;
+
+                    param.polar_mu = polar_mu;
+                    param.eta = cfg.eta;
+
+                    param.boundary_periodic = periodic;
+                    param.use_form_factor = cfg.use_form_factor;
+
+                    param.lattice_a = st.a();
+
+                    param.area_density = 0.0;
+
+                    rgio::cal_chi_result res =
+                        rg::cal_chi_grid_from_fermiPatch(
+                            fermi_bin,
+                            param
+                        );
+
+                    core::GridData& qgrid =
+                        res.qgrid;
+
+                    if (rank == 0) {
+                        const fs::path out_path =
+                            out_mu
+                            / (std::string("chi_") + run_stamp + ".txt");
+
+                        std::ofstream ofs(out_path.string());
+
+                        if (!ofs) {
+                            throw std::runtime_error(
+                                "Cannot open output chi file: "
+                                + out_path.string()
+                            );
+                        }
+
+                        ofs << std::setprecision(15);
+
+                        ofs << "# --- calculate_chi ---\n";
+                        ofs << "# model = " << cfg.model << "\n";
+                        ofs << "# input_format = bin\n";
+                        ofs << "# boundary = " << cfg.boundary << "\n";
+                        ofs << "# Dfield_eV = " << cfg.Dfield_eV << "\n";
+                        ofs << "# polar_mu_eV = " << polar_mu << "\n";
+                        ofs << "# polar_meV = " << 1000.0 * polar_mu << "\n";
+                        ofs << "# T_K = " << param.T_K << "\n";
+                        ofs << "# EF = " << param.Ef << "\n";
+                        ofs << "# doping = " << res.doping << "\n";
+                        ofs << "# filling = " << res.filling << "\n";
+                        ofs << "# eta = " << cfg.eta << "\n";
+                        ofs << "# use_form_factor = "
+                            << (cfg.use_form_factor ? "true" : "false")
+                            << "\n";
+                        ofs << "# iq = " << cfg.iq << "\n";
+                        ofs << "# jq = " << cfg.jq << "\n";
+                        ofs << "# q_unit = iq * dx * b1 + jq * dy * b2\n";
+                        ofs << "# normalization = sum_k * area_density\n";
+                        ofs << "# fermiPatch_bin = " << fermi_bin << "\n";
+
+                        if (qgrid.dx > 0.0 && qgrid.dy > 0.0) {
+                            ofs << "# dx = " << qgrid.dx << "\n";
+                            ofs << "# dy = " << qgrid.dy << "\n";
+                            ofs << "# area_density = "
+                                << qgrid.dx * qgrid.dy << "\n";
+                        }
+
+                        ofs << "\n";
+                        ofs << "# iq jq qx qy chi_real chi_imag nKpair nK\n";
+
+                        const auto& chiF =
+                            qgrid.get<std::complex<double>>("chi").v;
+
+                        const auto& qxF =
+                            qgrid.get<double>("qx").v;
+
+                        const auto& qyF =
+                            qgrid.get<double>("qy").v;
+
+                        const auto& nPairF =
+                            qgrid.get<long long>("nKpair").v;
+
+                        for (size_t i = 0; i < qgrid.size(); ++i) {
+                            long long nK = 0;
+
+                            if (param.dim > 0) {
+                                nK =
+                                    nPairF[i]
+                                    / (
+                                        static_cast<long long>(param.dim)
+                                      * static_cast<long long>(param.dim)
+                                    );
+                            }
+
+                            ofs << qgrid.iq[i] << " "
+                                << qgrid.jq[i] << " "
+                                << qxF[i] << " "
+                                << qyF[i] << " "
+                                << chiF[i].real() << " "
+                                << chiF[i].imag() << " "
+                                << nPairF[i] << " "
+                                << nK << "\n";
+                        }
+
+                        std::cout << "[out] Wrote: "
+                                  << out_path.string()
+                                  << "\n";
                     }
 
                     rgmpi::barrier();
@@ -207,15 +329,25 @@ int main(int argc, char** argv)
             }
         }
 
-        if (rank == 0) std::cout << "DONE.\n";
+        if (rank == 0) {
+            std::cout << "DONE.\n";
+        }
 
         rgmpi::finalize();
         return 0;
 
     } catch (const std::exception& ex) {
-        if (rank == 0) std::cerr << "[ERROR] " << ex.what() << "\n";
-        try { rgmpi::abort_all(std::string("calculate_chi FAILED: ") + ex.what(), 1); }
-        catch (...) {}
+        if (rank == 0) {
+            std::cerr << "[ERROR] " << ex.what() << "\n";
+        }
+
+        try {
+            rgmpi::abort_all(
+                std::string("calculate_chi FAILED: ") + ex.what(),
+                1
+            );
+        } catch (...) {}
+
         rgmpi::finalize();
         return 1;
     }

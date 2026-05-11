@@ -1,165 +1,352 @@
 // File: MeasureEngines/cal_susceptibility.h
 #pragma once
-#include <Eigen/Dense>
-#include <complex>
-#include <limits>
-#include <vector>
-#include <cmath>
-#include <algorithm>
-#include <array>
-#include <filesystem>
-#include <string>
-#include <iostream>
 
-#ifdef USE_MPI
-  #include <mpi.h>
-#endif
+#include <Eigen/Dense>
+
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <cstdint>
+#include <fstream>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include "Common/DataContainers.h"
-#include "LinearAlgebra/Constants.h"
 #include "LinearAlgebra/MathFunctions.h"
 #include "Util/MPI/mpi.h"
-#include "Util/IO/rg_fermiPatch.h"
-#include "Util/IO/rg_io.h"
+
+namespace rgio {
+
+using Vec2 = Eigen::Vector2d;
+using cd   = std::complex<double>;
+
+struct cal_chi_param {
+    int iq = 0;
+    int jq = 0;
+
+    int Nk  = 0;
+    int dim = 0;
+
+    double T_K = 0.0;
+    double Ef  = 0.0;
+
+    double doping  = 0.0;
+    double filling = 0.0;
+
+    double polar_mu = 0.0;
+    double eta = 1e-6;
+
+    double lattice_a = 2.46;
+
+    // Final normalization:
+    // chi = sum_k(...) * area_density.
+    // If <=0, kernel uses fgrid.dx * fgrid.dy.
+    double area_density = 0.0;
+
+    bool boundary_periodic = false;
+    bool use_form_factor = true;
+
+    std::string mesh_type;
+};
+
+struct cal_chi_result {
+    core::GridData qgrid;
+
+    double occTot_up = 0.0;
+    double occTot_dn = 0.0;
+
+    double doping  = 0.0;
+    double filling = 0.0;
+};
+
+inline core::GridData read_fermiPatch_bin(
+    const std::string& file_path,
+    cal_chi_param& param
+) {
+    std::ifstream ifs(file_path, std::ios::binary);
+    if (!ifs) {
+        throw std::runtime_error("read_fermiPatch_bin: cannot open file: " + file_path);
+    }
+
+    int32_t magic = 0;
+    int32_t version = 0;
+    int32_t NkTot_i32 = 0;
+    int32_t dim_i32 = 0;
+
+    double EF = 0.0;
+    double T_K = 0.0;
+    double doping = 0.0;
+    double filling = 0.0;
+    double dx = 0.0;
+    double dy = 0.0;
+
+    char mesh_type_buf[32] = {};
+
+    ifs.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    ifs.read(reinterpret_cast<char*>(&version), sizeof(version));
+    ifs.read(reinterpret_cast<char*>(&NkTot_i32), sizeof(NkTot_i32));
+    ifs.read(reinterpret_cast<char*>(&dim_i32), sizeof(dim_i32));
+
+    ifs.read(reinterpret_cast<char*>(&EF), sizeof(EF));
+    ifs.read(reinterpret_cast<char*>(&T_K), sizeof(T_K));
+    ifs.read(reinterpret_cast<char*>(&doping), sizeof(doping));
+    ifs.read(reinterpret_cast<char*>(&filling), sizeof(filling));
+
+    ifs.read(reinterpret_cast<char*>(&dx), sizeof(dx));
+    ifs.read(reinterpret_cast<char*>(&dy), sizeof(dy));
+    ifs.read(reinterpret_cast<char*>(mesh_type_buf), sizeof(mesh_type_buf));
+
+    if (!ifs) {
+        throw std::runtime_error("read_fermiPatch_bin: failed to read header: " + file_path);
+    }
+
+    if (magic != 20260510) {
+        throw std::runtime_error("read_fermiPatch_bin: wrong magic number");
+    }
+
+    if (version != 3) {
+        throw std::runtime_error("read_fermiPatch_bin: unsupported version");
+    }
+
+    if (NkTot_i32 <= 0 || dim_i32 <= 0) {
+        throw std::runtime_error("read_fermiPatch_bin: invalid NkTot or dim");
+    }
+
+    const size_t NkTot = static_cast<size_t>(NkTot_i32);
+    const int dim = static_cast<int>(dim_i32);
+
+    core::GridData g;
+    g.resize(NkTot);
+    g.dx = dx;
+    g.dy = dy;
+
+    auto& kvecF   = g.add<Vec2>("kvec").v;
+    auto& occAvgF = g.add<double>("occ_k_avg").v;
+    auto& evalsF  = g.add<std::vector<double>>("evals").v;
+    auto& occbF   = g.add<std::vector<double>>("occ_band").v;
+    auto& evecReF = g.add<std::vector<double>>("evec_re").v;
+    auto& evecImF = g.add<std::vector<double>>("evec_im").v;
+
+    for (size_t ik = 0; ik < NkTot; ++ik) {
+        int32_t iq = 0;
+        int32_t jq = 0;
+
+        double kx = 0.0;
+        double ky = 0.0;
+        double occ_avg = 0.0;
+
+        ifs.read(reinterpret_cast<char*>(&iq), sizeof(iq));
+        ifs.read(reinterpret_cast<char*>(&jq), sizeof(jq));
+        ifs.read(reinterpret_cast<char*>(&kx), sizeof(kx));
+        ifs.read(reinterpret_cast<char*>(&ky), sizeof(ky));
+        ifs.read(reinterpret_cast<char*>(&occ_avg), sizeof(occ_avg));
+
+        g.iq[ik] = static_cast<int>(iq);
+        g.jq[ik] = static_cast<int>(jq);
+        kvecF[ik] = Vec2(kx, ky);
+        occAvgF[ik] = occ_avg;
+
+        evalsF[ik].resize(static_cast<size_t>(dim));
+        occbF[ik].resize(static_cast<size_t>(dim));
+        evecReF[ik].resize(static_cast<size_t>(dim) * static_cast<size_t>(dim));
+        evecImF[ik].resize(static_cast<size_t>(dim) * static_cast<size_t>(dim));
+
+        ifs.read(
+            reinterpret_cast<char*>(evalsF[ik].data()),
+            sizeof(double) * static_cast<size_t>(dim)
+        );
+
+        ifs.read(
+            reinterpret_cast<char*>(occbF[ik].data()),
+            sizeof(double) * static_cast<size_t>(dim)
+        );
+
+        ifs.read(
+            reinterpret_cast<char*>(evecReF[ik].data()),
+            sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
+        );
+
+        ifs.read(
+            reinterpret_cast<char*>(evecImF[ik].data()),
+            sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
+        );
+
+        if (!ifs) {
+            throw std::runtime_error("read_fermiPatch_bin: failed reading body");
+        }
+    }
+
+    int Nk_infer = 0;
+    for (size_t ik = 0; ik < NkTot; ++ik) {
+        Nk_infer = std::max(Nk_infer, std::abs(g.iq[ik]));
+        Nk_infer = std::max(Nk_infer, std::abs(g.jq[ik]));
+        Nk_infer = std::max(Nk_infer, std::abs(g.iq[ik] + g.jq[ik]));
+    }
+
+    param.Nk = Nk_infer;
+    param.dim = dim;
+    param.Ef = EF;
+    param.T_K = T_K;
+    param.doping = doping;
+    param.filling = filling;
+    param.mesh_type = std::string(mesh_type_buf);
+    param.area_density = dx * dy;
+
+    g.assert_consistent();
+    return g;
+}
+
+} // namespace rgio
+
 
 namespace rg {
 
 using Vec2 = Eigen::Vector2d;
 using cd   = std::complex<double>;
 
-inline int wrap_q_index(int i, int Nk) {
-    const int P = 2 * Nk + 1;
-    return ((i + Nk) % P + P) % P - Nk;
+inline void infer_grid_range_(
+    const core::GridData& g,
+    int& iq_min,
+    int& iq_max,
+    int& jq_min,
+    int& jq_max
+) {
+    iq_min =  1000000000;
+    iq_max = -1000000000;
+    jq_min =  1000000000;
+    jq_max = -1000000000;
+
+    for (size_t i = 0; i < g.size(); ++i) {
+        iq_min = std::min(iq_min, g.iq[i]);
+        iq_max = std::max(iq_max, g.iq[i]);
+        jq_min = std::min(jq_min, g.jq[i]);
+        jq_max = std::max(jq_max, g.jq[i]);
+    }
 }
 
-// ============================================================
-// Core kernel: compute chi from an already-loaded fgrid.
-// - If polar_mu==0: use occ_band from fgrid.
-// - If polar_mu!=0:
-//     if fgrid already has occ_up/occ_dn (injected by path overload), use them;
-//     else fallback: compute occ_up/occ_dn from SAME fgrid by Fermi function.
-// ============================================================
-inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
-    const core::GridData& fgrid_in,
-    const rgio::cal_chi_param& param)
-{
-    int rank = 0, nprocs = 1;
-    rgmpi::rank_size(rank, nprocs);
-
-    rgio::cal_chi_result result;
-    double& occTot_up = result.occTot_up;
-    double& occTot_dn = result.occTot_dn;
-    double& doping    = result.doping;
-    double& filling   = result.filling;
-    doping  = param.doping;
-    filling = param.filling;
-
-    core::GridData fgrid = fgrid_in;
-
-    const int Nk = param.Nk;
-    const int dim = param.dim;
-    const auto& q_range = param.q_range;
-    const double T_K = param.T_K;
-    const double Ef = param.Ef;
-    const double polar_mu = param.polar_mu;
-    const bool boundary_periodic = param.boundary_periodic;
-    const double eta = param.eta;
-
-    const int P = 2 * Nk + 1;
-    const size_t Nrect = (size_t)P * (size_t)P;
-
-    const int q_iq_min = q_range[0];
-    const int q_iq_max = q_range[1];
-    const int q_jq_min = q_range[2];
-    const int q_jq_max = q_range[3];
-    const int Nq1 = q_iq_max - q_iq_min + 1;
-    const int Nq2 = q_jq_max - q_jq_min + 1;
-    const size_t Nout = (size_t)Nq1 * (size_t)Nq2;
-
-    const auto& evalsV = fgrid.get<std::vector<double>>("evals").v;
-    const auto& kvecF  = fgrid.get<Vec2>("kvec").v;
-
-    const std::vector<unsigned char>* insidePtr = nullptr;
-    try { insidePtr = &fgrid.get<unsigned char>("inside").v; } catch (...) { insidePtr = nullptr; }
-
-    // -------- polar branch: ensure occ_up/occ_dn exist, else fallback compute --------
-    if (polar_mu != 0.0) {
-        bool has_updn = false;
-        try {
-            (void)fgrid.get<std::vector<double>>("occ_up").v;
-            (void)fgrid.get<std::vector<double>>("occ_dn").v;
-            has_updn = true; 
-        } catch (...) {
-            has_updn = false;
-        }
-
-        if (!has_updn) {
-            if (rank == 0) {
-                std::cout << "[cal_chi] FAIL warmup\n";
-            }
-
-            auto& occUp_b = fgrid.add<std::vector<double>>("occ_up").v;
-            auto& occDn_b = fgrid.add<std::vector<double>>("occ_dn").v;
-            occUp_b.assign(Nrect, std::vector<double>(dim, 0.0));
-            occDn_b.assign(Nrect, std::vector<double>(dim, 0.0));
-
-            occTot_up = 0.0;
-            occTot_dn = 0.0;
-
-            const double Ef_up = Ef - 0.5 * polar_mu;
-            const double Ef_dn = Ef + 0.5 * polar_mu;
-
-            for (size_t idxk = 0; idxk < Nrect; ++idxk) {
-                if (insidePtr && !(*insidePtr)[idxk]) continue;
-                const auto& E = evalsV[idxk];
-
-                std::vector<double> fu(dim, 0.0), fd(dim, 0.0);
-                for (int b = 0; b < dim; ++b) {
-                    fu[(size_t)b] = la::fermi(E[(size_t)b] - 0.5 * polar_mu, Ef_up, T_K);
-                    fd[(size_t)b] = la::fermi(E[(size_t)b] + 0.5 * polar_mu, Ef_dn, T_K);
-                    occTot_up += fu[(size_t)b];
-                    occTot_dn += fd[(size_t)b];
-                }
-                occUp_b[idxk] = std::move(fu);
-                occDn_b[idxk] = std::move(fd);
-            }
-
-            filling = (occTot_up + occTot_dn) / (2.0 * double(Nrect) * double(dim));
-            doping  = la::filling_to_doping(filling);
-
-        } else {
-            if (rank == 0) {
-                std::cout << "[cal_chi] SUCCESS warmup\n";
-            }
-
-            // injected case: recompute totals for metadata
-            const auto& occUp_b = fgrid.get<std::vector<double>>("occ_up").v;
-            const auto& occDn_b = fgrid.get<std::vector<double>>("occ_dn").v;
-
-            occTot_up = 0.0;
-            occTot_dn = 0.0;
-            for (size_t idxk = 0; idxk < Nrect; ++idxk) {
-                if (insidePtr && !(*insidePtr)[idxk]) continue;
-                for (int b = 0; b < dim; ++b) {
-                    occTot_up += occUp_b[idxk][(size_t)b];
-                    occTot_dn += occDn_b[idxk][(size_t)b];
-                }
-            }
-
-            filling = (occTot_up + occTot_dn) / (2.0 * double(Nrect) * double(dim));
-            doping  = la::filling_to_doping(filling);
-        }
-    } else {
-        // polar=0: use param filling metadata if needed
-        occTot_up = filling * (2.0 * double(Nrect) * double(dim));
-        occTot_dn = filling * (2.0 * double(Nrect) * double(dim));
+inline bool find_shifted_index_(
+    const core::GridData& g,
+    const std::string& mesh_type,
+    int iq,
+    int jq,
+    bool periodic,
+    size_t& idx
+) {
+    if (!periodic || mesh_type == "hex") {
+        return g.ij_to_idx(iq, jq, idx);
     }
 
-    // ---- output qgrid ----
+    int iq_min = 0;
+    int iq_max = 0;
+    int jq_min = 0;
+    int jq_max = 0;
+
+    infer_grid_range_(g, iq_min, iq_max, jq_min, jq_max);
+
+    const int N1 = iq_max - iq_min + 1;
+    const int N2 = jq_max - jq_min + 1;
+
+    const int wiq = iq_min + la::mod_pos_int(iq - iq_min, N1);
+    const int wjq = jq_min + la::mod_pos_int(jq - jq_min, N2);
+
+    return g.ij_to_idx(wiq, wjq, idx);
+}
+
+inline bool infer_dq_vectors_(
+    const core::GridData& g,
+    Vec2& dq1,
+    Vec2& dq2
+) {
+    const auto& kvec = g.get<Vec2>("kvec").v;
+
+    size_t i00 = 0;
+    size_t i10 = 0;
+    size_t i01 = 0;
+
+    if (
+        g.ij_to_idx(0, 0, i00)
+     && g.ij_to_idx(1, 0, i10)
+     && g.ij_to_idx(0, 1, i01)
+    ) {
+        dq1 = kvec[i10] - kvec[i00];
+        dq2 = kvec[i01] - kvec[i00];
+        return true;
+    }
+
+    return false;
+}
+
+inline double form_factor_(
+    const std::vector<double>& u1_re,
+    const std::vector<double>& u1_im,
+    const std::vector<double>& u2_re,
+    const std::vector<double>& u2_im,
+    int dim,
+    int band1,
+    int band2
+) {
+    cd ov(0.0, 0.0);
+
+    for (int a = 0; a < dim; ++a) {
+        const size_t p1 =
+            static_cast<size_t>(a) * static_cast<size_t>(dim)
+          + static_cast<size_t>(band1);
+
+        const size_t p2 =
+            static_cast<size_t>(a) * static_cast<size_t>(dim)
+          + static_cast<size_t>(band2);
+
+        const cd u1(u1_re[p1], u1_im[p1]);
+        const cd u2(u2_re[p2], u2_im[p2]);
+
+        ov += std::conj(u1) * u2;
+    }
+
+    return std::norm(ov);
+}
+
+inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
+    const core::GridData& fgrid,
+    rgio::cal_chi_param param
+) {
+    int rank = 0;
+    int nprocs = 1;
+    rgmpi::rank_size(rank, nprocs);
+
+    fgrid.assert_consistent();
+
+    const size_t NkTot = fgrid.size();
+    if (NkTot == 0) {
+        rgmpi::abort_all("cal_chi_grid_from_fermiPatch: empty fgrid");
+    }
+
+    const int dim = param.dim;
+    if (dim <= 0) {
+        rgmpi::abort_all("cal_chi_grid_from_fermiPatch: dim <= 0");
+    }
+
+    if (!(param.eta > 0.0)) {
+        rgmpi::abort_all("cal_chi_grid_from_fermiPatch: eta must be > 0");
+    }
+
+    const auto& evals  = fgrid.get<std::vector<double>>("evals").v;
+    const auto& occ    = fgrid.get<std::vector<double>>("occ_band").v;
+    const auto& evecRe = fgrid.get<std::vector<double>>("evec_re").v;
+    const auto& evecIm = fgrid.get<std::vector<double>>("evec_im").v;
+
+    rgio::cal_chi_result result;
+    result.doping = param.doping;
+    result.filling = param.filling;
+
     core::GridData& qgrid = result.qgrid;
-    qgrid.resize(Nout); 
+    qgrid.resize(1);
     qgrid.dx = fgrid.dx;
     qgrid.dy = fgrid.dy;
+
+    qgrid.iq[0] = param.iq;
+    qgrid.jq[0] = param.jq;
 
     auto& chiF   = qgrid.add<cd>("chi").v;
     auto& nPairF = qgrid.add<long long>("nKpair").v;
@@ -167,265 +354,188 @@ inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
     auto& qxF    = qgrid.add<double>("qx").v;
     auto& qyF    = qgrid.add<double>("qy").v;
 
-    // fill q-grid
-    {
-        size_t out = 0;
-        for (int jq = q_jq_min; jq <= q_jq_max; ++jq) {
-            for (int iq = q_iq_min; iq <= q_iq_max; ++iq, ++out) {
-                qgrid.iq[out] = iq;
-                qgrid.jq[out] = jq;
-                Vec2 qvec = kvecF[fgrid.ij_to_idx_or_throw(iq, jq)];
-                qvecF[out] = qvec;
-                qxF[out] = qvec.x();
-                qyF[out] = qvec.y();
-                chiF[out] = cd(0.0, 0.0);
-                nPairF[out] = 0;
-            }
-        }
+    Vec2 dq1(0.0, 0.0);
+    Vec2 dq2(0.0, 0.0);
+
+    if (infer_dq_vectors_(fgrid, dq1, dq2)) {
+        const Vec2 qvec =
+            static_cast<double>(param.iq) * dq1
+          + static_cast<double>(param.jq) * dq2;
+
+        qvecF[0] = qvec;
+        qxF[0] = qvec.x();
+        qyF[0] = qvec.y();
+    } else {
+        const double NaN = std::numeric_limits<double>::quiet_NaN();
+        qvecF[0] = Vec2(NaN, NaN);
+        qxF[0] = NaN;
+        qyF[0] = NaN;
     }
 
-    // MPI split
-    const auto [lin_s, lin_e] = rgmpi::block_1d_int((int)Nrect, rank, nprocs);
+    chiF[0] = cd(0.0, 0.0);
+    nPairF[0] = 0;
 
-    // main loop
-    for (size_t out = 0; out < Nout; ++out) {
-        const int dq_iq = qgrid.iq[out];
-        const int dq_jq = qgrid.jq[out];
+    const bool use_polar = std::abs(param.polar_mu) > 1e-15;
 
-        cd chi_local(0.0, 0.0);
-        long long nPair_local = 0;
+    std::vector<double> occ_up;
+    std::vector<double> occ_dn;
 
-        for (size_t lin = (size_t)lin_s; lin < (size_t)lin_e; ++lin) {
-            const size_t idxk1 = lin;
-            if (insidePtr && !(*insidePtr)[idxk1]) continue;
+    if (use_polar) {
+        occ_up.assign(NkTot * static_cast<size_t>(dim), 0.0);
+        occ_dn.assign(NkTot * static_cast<size_t>(dim), 0.0);
 
-            const auto [iq1, jq1] = fgrid.idx_to_ij(idxk1);
-            int iq2 = iq1 + dq_iq;
-            int jq2 = jq1 + dq_jq;
+        result.occTot_up = 0.0;
+        result.occTot_dn = 0.0;
 
-            if (boundary_periodic) {
-                iq2 = wrap_q_index(iq2, Nk);
-                jq2 = wrap_q_index(jq2, Nk);
-            } else {
-                if (iq2 < -Nk || iq2 > Nk) continue;
-                if (jq2 < -Nk || jq2 > Nk) continue;
+        for (size_t ik = 0; ik < NkTot; ++ik) {
+            for (int b = 0; b < dim; ++b) {
+                const double E = evals[ik][static_cast<size_t>(b)];
+
+                const double E_up = E - 0.5 * param.polar_mu;
+                const double E_dn = E + 0.5 * param.polar_mu;
+
+                const double fu = la::fermi(E_up, param.Ef, param.T_K);
+                const double fd = la::fermi(E_dn, param.Ef, param.T_K);
+
+                const size_t p =
+                    ik * static_cast<size_t>(dim)
+                  + static_cast<size_t>(b);
+
+                occ_up[p] = fu;
+                occ_dn[p] = fd;
+
+                result.occTot_up += fu;
+                result.occTot_dn += fd;
             }
+        }
 
-            size_t idxk2 = 0;
-            if (!fgrid.ij_to_idx(iq2, jq2, idxk2)) continue;
-            if (insidePtr && !(*insidePtr)[idxk2]) continue;
+        result.filling =
+            (result.occTot_up + result.occTot_dn)
+          / (2.0 * static_cast<double>(NkTot) * static_cast<double>(dim));
 
-            if (polar_mu == 0.0) {
-                const auto& occTot_b = fgrid.get<std::vector<double>>("occ_band").v;
-                const auto& E1 = evalsV[idxk1];
-                const auto& E2 = evalsV[idxk2];
-                const auto& f1 = occTot_b[idxk1];
-                const auto& f2 = occTot_b[idxk2];
+        result.doping =
+            la::filling_to_doping(result.filling, param.lattice_a);
+    }
 
-                for (int b = 0; b < dim; ++b) {
-                    const double Eb = E1[(size_t)b];
-                    const double fb = f1[(size_t)b];
-                    for (int m = 0; m < dim; ++m) {
-                        const double Em = E2[(size_t)m];
-                        const double fm = f2[(size_t)m];
-                        chi_local += (fm - fb) / cd(Eb - Em, eta);
-                    }
+    const auto [k_start, k_end] =
+        rgmpi::block_1d_int(static_cast<int>(NkTot), rank, nprocs);
+
+    cd chi_local(0.0, 0.0);
+    long long nPair_local = 0;
+
+    for (int ii = k_start; ii < k_end; ++ii) {
+        const size_t ik1 = static_cast<size_t>(ii);
+
+        const int iq1 = fgrid.iq[ik1];
+        const int jq1 = fgrid.jq[ik1];
+
+        size_t ik2 = 0;
+        if (!find_shifted_index_(
+                fgrid,
+                param.mesh_type,
+                iq1 + param.iq,
+                jq1 + param.jq,
+                param.boundary_periodic,
+                ik2
+            )) {
+            continue;
+        }
+
+        for (int b = 0; b < dim; ++b) {
+            const double Eb = evals[ik1][static_cast<size_t>(b)];
+
+            for (int m = 0; m < dim; ++m) {
+                const double Em = evals[ik2][static_cast<size_t>(m)];
+
+                double FF = 1.0;
+                if (param.use_form_factor) {
+                    FF = form_factor_(
+                        evecRe[ik1],
+                        evecIm[ik1],
+                        evecRe[ik2],
+                        evecIm[ik2],
+                        dim,
+                        b,
+                        m
+                    );
                 }
-                nPair_local += (long long)dim * (long long)dim;
 
-            } else {
-                const auto& E1 = evalsV[idxk1];
-                const auto& E2 = evalsV[idxk2];
+                if (!use_polar) {
+                    const double fb = occ[ik1][static_cast<size_t>(b)];
+                    const double fm = occ[ik2][static_cast<size_t>(m)];
 
-                const auto& occUp_b = fgrid.get<std::vector<double>>("occ_up").v;
-                const auto& occDn_b = fgrid.get<std::vector<double>>("occ_dn").v;
-                const auto& f1u = occUp_b[idxk1];
-                const auto& f1d = occDn_b[idxk1];
-                const auto& f2u = occUp_b[idxk2];
-                const auto& f2d = occDn_b[idxk2];
+                    chi_local +=
+                        FF * (fm - fb) / cd(Eb - Em, param.eta);
 
-                for (int b = 0; b < dim; ++b) {
-                    const double E1u = E1[(size_t)b] - 0.5 * polar_mu;
-                    const double E1d = E1[(size_t)b] + 0.5 * polar_mu;
-                    for (int m = 0; m < dim; ++m) {
-                        const double E2u = E2[(size_t)m] - 0.5 * polar_mu;
-                        const double E2d = E2[(size_t)m] + 0.5 * polar_mu;
+                    ++nPair_local;
+                } else {
+                    const size_t p1 =
+                        ik1 * static_cast<size_t>(dim)
+                      + static_cast<size_t>(b);
 
-                        chi_local += (f1u[(size_t)b] - f2u[(size_t)m]) / 4.0 / cd(-E1u + E2u, eta);
-                        chi_local += (f1d[(size_t)b] - f2u[(size_t)m]) / 4.0 / cd(-E1d + E2u, eta);
-                        chi_local += (f1u[(size_t)b] - f2d[(size_t)m]) / 4.0 / cd(-E1u + E2d, eta);
-                        chi_local += (f1d[(size_t)b] - f2d[(size_t)m]) / 4.0 / cd(-E1d + E2d, eta);
-                    }
+                    const size_t p2 =
+                        ik2 * static_cast<size_t>(dim)
+                      + static_cast<size_t>(m);
+
+                    const double Ebu = Eb - 0.5 * param.polar_mu;
+                    const double Ebd = Eb + 0.5 * param.polar_mu;
+                    const double Emu = Em - 0.5 * param.polar_mu;
+                    const double Emd = Em + 0.5 * param.polar_mu;
+
+                    const double fbu = occ_up[p1];
+                    const double fbd = occ_dn[p1];
+                    const double fmu = occ_up[p2];
+                    const double fmd = occ_dn[p2];
+
+                    chi_local +=
+                        0.25 * FF * (fmu - fbu) / cd(Ebu - Emu, param.eta);
+
+                    chi_local +=
+                        0.25 * FF * (fmd - fbd) / cd(Ebd - Emd, param.eta);
+
+                    chi_local +=
+                        0.25 * FF * (fmu - fbd) / cd(Ebd - Emu, param.eta);
+
+                    chi_local +=
+                        0.25 * FF * (fmd - fbu) / cd(Ebu - Emd, param.eta);
+
+                    nPair_local += 4;
                 }
-                nPair_local += (long long)dim * (long long)dim;
             }
-        }
-
-        double re = chi_local.real();
-        double im = chi_local.imag();
-        double re_sum = 0.0, im_sum = 0.0;
-        long long np_sum = 0;
-
-        rgmpi::reduce_sum(re, re_sum);
-        rgmpi::reduce_sum(im, im_sum);
-        rgmpi::reduce_sum(nPair_local, np_sum);
-
-        if (rank == 0) {
-            chiF[out]   = cd(re_sum, im_sum) / double(Nrect);
-            nPairF[out] = np_sum;
         }
     }
 
-#ifdef USE_MPI
-    if (rgmpi::inited() && nprocs > 1) {
-        std::vector<double> re_all(Nout, 0.0), im_all(Nout, 0.0);
-        if (rank == 0) {
-            for (size_t out = 0; out < Nout; ++out) {
-                re_all[out] = chiF[out].real();
-                im_all[out] = chiF[out].imag();
-            }
-        }
-        MPI_Bcast(re_all.data(), (int)Nout, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Bcast(im_all.data(), (int)Nout, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Bcast(nPairF.data(), (int)Nout, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
-        if (rank != 0) {
-            for (size_t out = 0; out < Nout; ++out) chiF[out] = cd(re_all[out], im_all[out]);
-        }
-    }
-#endif
+    double chi_re_sum = 0.0;
+    double chi_im_sum = 0.0;
+    long long nPair_sum = 0;
 
+    rgmpi::allreduce_sum(chi_local.real(), chi_re_sum);
+    rgmpi::allreduce_sum(chi_local.imag(), chi_im_sum);
+    rgmpi::allreduce_sum(nPair_local, nPair_sum);
+
+    double area_density = param.area_density;
+    if (!(area_density > 0.0)) {
+        area_density = fgrid.dx * fgrid.dy;
+    }
+    if (!(area_density > 0.0)) {
+        area_density = 1.0;
+    }
+
+    chiF[0] = cd(chi_re_sum, chi_im_sum) * area_density;
+    nPairF[0] = nPair_sum;
+
+    qgrid.assert_consistent();
     return result;
 }
 
-
-// ============================================================
-// Path overload (simplified):
-// 1) read base file -> fgrid
-// 2) if polar_mu!=0: try locate mu_up/mu_dn fermiPatch and inject occ_up/occ_dn
-//    if fail -> debug + fallback (kernel will self-compute occ_up/occ_dn)
-// 3) call core kernel cal_chi_grid_from_fermiPatch(fgrid,param)
-// ============================================================
-// ============================================================
-// Path overload (minimal print):
-// Only print UP/DN success or failure
-// ============================================================
 inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
     const std::string& file_path,
-    rgio::cal_chi_param& param)
-{
-    int rank = 0, nprocs = 1;
-    rgmpi::rank_size(rank, nprocs);
-
-    namespace fs = std::filesystem;
-
-    // (1) read base
-    core::GridData fgrid = rgio::read_fermiPatch_grid_with_bands(file_path, param);
-
-    if (param.polar_mu == 0.0) {
-        return cal_chi_grid_from_fermiPatch(fgrid, param);
-    }
-
-    auto FAIL = [&]() -> rgio::cal_chi_result {
-        return cal_chi_grid_from_fermiPatch(fgrid, param);
-    };
-
-    auto newest_fermiPatch_in_dir = [&](const fs::path& dir) -> std::string {
-        if (!fs::exists(dir) || !fs::is_directory(dir)) return {};
-        fs::file_time_type best_t{};
-        fs::path best_p;
-        bool has = false;
-        for (const auto& ent : fs::directory_iterator(dir)) {
-            if (!ent.is_regular_file()) continue;
-            const fs::path p = ent.path();
-            if (p.extension() != ".txt") continue;
-            const std::string fn = p.filename().string();
-            if (fn.rfind("fermiPatch_", 0) != 0) continue;
-            const auto t = fs::last_write_time(p);
-            if (!has || t > best_t) { best_t = t; best_p = p; has = true; }
-        }
-        return has ? best_p.string() : std::string{};
-    };
-
-    // locate shifted folders
-    const fs::path p(file_path);
-    const fs::path mu_dir = p.parent_path();
-    const fs::path T_dir  = mu_dir.parent_path();
-    const std::string mu_tag = mu_dir.filename().string();
-
-    double muX = std::numeric_limits<double>::quiet_NaN();
-    if (!rgio::parse_tag_value(mu_tag, "mu", muX)) {
-        if (rank == 0) {
-            std::cout << "[shift] UP MISS (cannot parse mu tag=" << mu_tag << ")\n";
-            std::cout << "[shift] DN MISS (cannot parse mu tag=" << mu_tag << ")\n";
-            std::cout << "[shift] UP FAIL\n";
-            std::cout << "[shift] DN FAIL\n";
-        }
-        return FAIL();
-    }
-
-    const double mu_up = muX - 0.5 * param.polar_mu;
-    const double mu_dn = muX + 0.5 * param.polar_mu;
-
-    const fs::path up_dir = T_dir / ("mu" + rgio::tag6(mu_up));
-    const fs::path dn_dir = T_dir / ("mu" + rgio::tag6(mu_dn));
-
-    const std::string up_file = newest_fermiPatch_in_dir(up_dir);
-    const std::string dn_file = newest_fermiPatch_in_dir(dn_dir);
-
-    const bool up_found = !up_file.empty();
-    const bool dn_found = !dn_file.empty();
-
-    if (rank == 0) {
-        std::cout << "[shift] UP " << (up_found ? "FOUND " : "MISS  ")
-                  << (up_found ? up_file : up_dir.string()) << "\n";
-        std::cout << "[shift] DN " << (dn_found ? "FOUND " : "MISS  ")
-                  << (dn_found ? dn_file : dn_dir.string()) << "\n";
-    }
-
-    if (!up_found || !dn_found) {
-        if (rank == 0) {
-            std::cout << "[shift] UP " << (up_found ? "OK" : "FAIL") << "\n";
-            std::cout << "[shift] DN " << (dn_found ? "OK" : "FAIL") << "\n";
-        }
-        return FAIL();
-    }
-
-    // read shifted grids
-    bool up_ok = false, dn_ok = false;
-    rgio::cal_chi_param pu = param, pd = param;
-    core::GridData f_up, f_dn;
-
-    try { f_up = rgio::read_fermiPatch_grid_with_bands(up_file, pu); up_ok = true; }
-    catch (...) { up_ok = false; }
-
-    try { f_dn = rgio::read_fermiPatch_grid_with_bands(dn_file, pd); dn_ok = true; }
-    catch (...) { dn_ok = false; }
-
-    if (rank == 0) {
-        std::cout << "[shift] UP " << (up_ok ? "OK" : "FAIL") << "\n";
-        std::cout << "[shift] DN " << (dn_ok ? "OK" : "FAIL") << "\n";
-    }
-
-    if (!up_ok || !dn_ok) return FAIL();
-
-    // minimal consistency check
-    if (pu.Nk != param.Nk || pd.Nk != param.Nk ||
-        pu.dim != param.dim || pd.dim != param.dim ||
-        f_up.size() != fgrid.size() || f_dn.size() != fgrid.size())
-    {
-        return FAIL();
-    }
-
-    // inject occ_up/occ_dn from shifted occ_band
-    const auto& occb_up = f_up.get<std::vector<double>>("occ_band").v;
-    const auto& occb_dn = f_dn.get<std::vector<double>>("occ_band").v;
-
-    fgrid.add<std::vector<double>>("occ_up").v = occb_up;
-    fgrid.add<std::vector<double>>("occ_dn").v = occb_dn;
+    rgio::cal_chi_param& param
+) {
+    core::GridData fgrid =
+        rgio::read_fermiPatch_bin(file_path, param);
 
     return cal_chi_grid_from_fermiPatch(fgrid, param);
 }
-
-
 
 } // namespace rg

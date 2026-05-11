@@ -125,6 +125,46 @@ inline void allreduce_sum(long long local, long long& global)
     global = local;
 }
 
+inline void allreduce_sum_vector(std::vector<double>& v)
+{
+#ifdef USE_MPI
+    if (inited()) {
+        std::vector<double> tmp(v.size(), 0.0);
+
+        MPI_Allreduce(
+            v.data(),
+            tmp.data(),
+            static_cast<int>(v.size()),
+            MPI_DOUBLE,
+            MPI_SUM,
+            MPI_COMM_WORLD
+        );
+
+        v.swap(tmp);
+    }
+#endif
+}
+
+inline void allreduce_sum_vector(std::vector<long long>& v)
+{
+#ifdef USE_MPI
+    if (inited()) {
+        std::vector<long long> tmp(v.size(), 0);
+
+        MPI_Allreduce(
+            v.data(),
+            tmp.data(),
+            static_cast<int>(v.size()),
+            MPI_LONG_LONG,
+            MPI_SUM,
+            MPI_COMM_WORLD
+        );
+
+        v.swap(tmp);
+    }
+#endif
+}
+
 inline void allreduce_min(double local, double& global)
 {
     #ifdef USE_MPI

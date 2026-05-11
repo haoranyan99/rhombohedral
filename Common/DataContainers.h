@@ -93,118 +93,227 @@ inline const Field<T>& get_field_(const std::vector<std::shared_ptr<FieldBase>>&
 
 
 // ============================================================
-// GridData: 2D integer grid container
+// GridData: sparse/general 2D integer grid container
 // ------------------------------------------------------------
-// - iq/jq: integer coordinates (flattened list)
-// - dx/dy: generic step parameters (interpretation is context-dependent)
+// - iq/jq: integer coordinates
+// - dx/dy: step parameters
+// - mesh_type:
+//      "hex"
+//      "parallelogram"
+//      "square"
+//      "unknown"
 // - fields: arbitrary per-grid-point data
 // ============================================================
 struct GridData {
+
+    // integer mesh coordinates
     std::vector<int> iq;
     std::vector<int> jq;
 
+    // generic mesh spacing
     double dx = 0.0;
     double dy = 0.0;
 
+    // mesh topology / geometry
+    std::string mesh_type = "unknown";
+
+    // heterogeneous fields
     std::vector<std::shared_ptr<FieldBase>> fields;
 
-    // --------------------------
-    // NEW: (iq,jq) -> idx cache
-    // --------------------------
+    // --------------------------------------------------------
+    // lazy (iq,jq) -> idx cache
+    // --------------------------------------------------------
     mutable bool idx_cache_valid = false;
+
     mutable std::unordered_map<long long, size_t> ij2idx;
 
-    size_t size() const { return iq.size(); }
+    // ========================================================
+    // size
+    // ========================================================
+    size_t size() const {
+        return iq.size();
+    }
 
-    void resize(size_t N) {
+    // ========================================================
+    // resize
+    // ========================================================
+    void resize(size_t N)
+    {
         iq.resize(N);
         jq.resize(N);
-        for (auto& f : fields) f->resize(N);
 
-        // NEW: invalidate cache on resize
+        for (auto& f : fields) {
+            f->resize(N);
+        }
+
         idx_cache_valid = false;
         ij2idx.clear();
     }
 
-    void assert_consistent() const {
+    // ========================================================
+    // consistency check
+    // ========================================================
+    void assert_consistent() const
+    {
         const size_t N = size();
-        if (jq.size() != N)
-            throw std::runtime_error("GridData: iq/jq size mismatch");
+
+        if (jq.size() != N) {
+            throw std::runtime_error(
+                "GridData: iq/jq size mismatch"
+            );
+        }
+
         for (auto& f : fields) {
-            if (f->size() != N)
-                throw std::runtime_error("GridData: field size mismatch: " + f->name);
+            if (f->size() != N) {
+                throw std::runtime_error(
+                    "GridData: field size mismatch: "
+                    + f->name
+                );
+            }
         }
     }
 
+    // ========================================================
+    // add field
+    // ========================================================
     template <class T>
-    Field<T>& add(const std::string& name) {
-        detail::ensure_field_not_exists_(fields, name, "GridData::add");
-        auto p = std::make_shared<Field<T>>(name, size());
+    Field<T>& add(const std::string& name)
+    {
+        detail::ensure_field_not_exists_(
+            fields,
+            name,
+            "GridData::add"
+        );
+
+        auto p =
+            std::make_shared<Field<T>>(name, size());
+
         fields.push_back(p);
+
         return *p;
     }
 
+    // ========================================================
+    // get field
+    // ========================================================
     template <class T>
-    Field<T>& get(const std::string& name) {
-        return detail::get_field_<T>(fields, name, "GridData::get");
+    Field<T>& get(const std::string& name)
+    {
+        return detail::get_field_<T>(
+            fields,
+            name,
+            "GridData::get"
+        );
     }
 
     template <class T>
-    const Field<T>& get(const std::string& name) const {
-        return detail::get_field_<T>(fields, name, "GridData::get");
+    const Field<T>& get(const std::string& name) const
+    {
+        return detail::get_field_<T>(
+            fields,
+            name,
+            "GridData::get"
+        );
     }
 
-    // ============================================================
-    // NEW helper 1: idx -> (iq,jq)  (no dependence on fill order)
-    // ============================================================
-    inline std::pair<int,int> idx_to_ij(size_t idx) const {
-        if (idx >= size())
-            throw std::runtime_error("GridData::idx_to_ij: idx out of range");
+    // ========================================================
+    // idx -> (iq,jq)
+    // ========================================================
+    inline std::pair<int,int> idx_to_ij(size_t idx) const
+    {
+        if (idx >= size()) {
+            throw std::runtime_error(
+                "GridData::idx_to_ij: idx out of range"
+            );
+        }
+
         return { iq[idx], jq[idx] };
     }
 
-    // ============================================================
-    // NEW helper 2: (iq,jq) -> idx, via lazy-built cache
-    // - Returns true if found; false if this (iq,jq) doesn't exist in grid
-    // ============================================================
-    inline bool ij_to_idx(int i, int j, size_t& out_idx) const {
+    // ========================================================
+    // (iq,jq) -> idx
+    // return false if not found
+    // ========================================================
+    inline bool ij_to_idx(
+        int i,
+        int j,
+        size_t& out_idx
+    ) const
+    {
         build_ij2idx_cache_if_needed_();
+
         const long long key = pack_ij_(i, j);
+
         auto it = ij2idx.find(key);
-        if (it == ij2idx.end()) return false;
+
+        if (it == ij2idx.end()) {
+            return false;
+        }
+
         out_idx = it->second;
+
         return true;
     }
 
-    // convenience: throw-on-miss version
-    inline size_t ij_to_idx_or_throw(int i, int j) const {
-        size_t idx;
+    // ========================================================
+    // throw-on-miss version
+    // ========================================================
+    inline size_t ij_to_idx_or_throw(
+        int i,
+        int j
+    ) const
+    {
+        size_t idx = 0;
+
         if (!ij_to_idx(i, j, idx)) {
-            throw std::runtime_error("GridData::ij_to_idx: (iq,jq) not found in grid");
+            throw std::runtime_error(
+                "GridData::ij_to_idx: (iq,jq) not found"
+            );
         }
+
         return idx;
     }
 
 private:
-    // pack two 32-bit ints into one 64-bit key (stable, fast, no struct)
-    static inline long long pack_ij_(int i, int j) {
-        return ( (long long)( (uint32_t)i ) << 32 ) | (uint32_t)j;
+
+    // ========================================================
+    // pack two 32-bit ints into one 64-bit key
+    // ========================================================
+    static inline long long pack_ij_(
+        int i,
+        int j
+    ) {
+        return
+            (
+                (long long)((uint32_t)i) << 32
+            )
+            |
+            (uint32_t)j;
     }
 
-    inline void build_ij2idx_cache_if_needed_() const {
-        if (idx_cache_valid) return;
+    // ========================================================
+    // build cache
+    // ========================================================
+    inline void build_ij2idx_cache_if_needed_() const
+    {
+        if (idx_cache_valid) {
+            return;
+        }
 
         ij2idx.clear();
+
         ij2idx.reserve(size() * 2);
 
         for (size_t idx = 0; idx < size(); ++idx) {
-            ij2idx[ pack_ij_(iq[idx], jq[idx]) ] = idx;
+
+            ij2idx[
+                pack_ij_(iq[idx], jq[idx])
+            ] = idx;
         }
 
         idx_cache_valid = true;
     }
 };
-
 
 
 

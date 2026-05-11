@@ -1,34 +1,59 @@
-// File: Util/Config/config_reader.h
 #pragma once
 
 #include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <sstream>
 
 #include <nlohmann/json.hpp>
-#include "LinearAlgebra/MathFunctions.h" // la::linspace, la::doping_to_filling
+#include "LinearAlgebra/MathFunctions.h"
 
 namespace config {
 
 using json = nlohmann::json;
 
-#pragma region ===================== Small utilities =====================
+// ============================================================
+// Small utilities
+// ============================================================
 
-inline bool file_exists(const std::string& path) {
+inline bool file_exists(const std::string& path)
+{
     std::ifstream f(path);
-    return (bool)f;
+    return static_cast<bool>(f);
 }
 
-#pragma endregion
-// ============================================================================
+inline std::vector<double> read_range(const json& j)
+{
+    const double xmin = j.at("min").get<double>();
+    const double xmax = j.at("max").get<double>();
+    const int num = j.at("num").get<int>();
 
+    if (num < 1) {
+        throw std::runtime_error("read_range: num must be >= 1");
+    }
 
+    std::vector<double> x(static_cast<size_t>(num));
 
-#pragma region ===================== Struct definitions =====================
+    if (num == 1) {
+        x[0] = xmin;
+        return x;
+    }
 
-// -------------------- RG parameters --------------------
+    for (int i = 0; i < num; ++i) {
+        x[static_cast<size_t>(i)] =
+            xmin
+          + (xmax - xmin)
+          * static_cast<double>(i)
+          / static_cast<double>(num - 1);
+    }
+
+    return x;
+}
+
+// ============================================================
+// Struct definitions
+// ============================================================
+
 struct RGPara {
     int    layer_num = 3;
     double a0        = 2.46;
@@ -38,25 +63,23 @@ struct RGPara {
     double epsilon_r = 3.5;
 };
 
-
-// -------------------- mesh --------------------
 struct MeshCfg {
     std::string type = "localK_hex";
     int    Nk        = 80;
     double dk_frac   = 0.1;
 };
 
-// -------------------- structure / band --------------------
 struct TestStructureConfig {
     std::string model     = "sk";
-    std::string para_file = "RG_para.json";
+    std::string para_file = "Source/Parameters/RG_para.json";
     std::string data_dir  = "data";
-    int Nk_seg            = 200;
+
+    int Nk_seg = 200;
 };
 
 struct BarebandPathCfg {
     int Nk_seg = 200;
-    double frac_local = 0.20; // for local path; GMKG can ignore but keep consistent
+    double frac_local = 0.20;
 };
 
 struct TestBarebandConfig {
@@ -71,470 +94,572 @@ struct TestBarebandConfig {
     BarebandPathCfg localK_MKKp;
 };
 
-// -------------------- DOS --------------------
 struct DOSCfg {
     double e_low  = -0.3;
     double e_high =  0.3;
     int    num_e  = 2001;
-    double eta    = 0.001; // positive by default
+    double eta    = 0.001;
 };
 
 struct TestDOSConfig {
     std::string data_dir  = "data";
     std::string para_file = "Source/Parameters/RG_para.json";
+
     std::string model = "sk";
     double T_K = 0.0;
 
-    std::vector<double> DfieldList_meV; // meV * nm^-1
+    std::vector<double> DfieldList_meV;
 
     MeshCfg kmesh;
     DOSCfg dos;
 };
 
-
 struct CalFermiConfig {
     std::string model = "sk";
-    std::string mode = "doping";
     std::string data_dir  = "data";
     std::string output_suffix = "0";
     std::string para_file = "Source/Parameters/RG_para.json";
-    
-    double Dfield_eV  = 0.0;
 
-    MeshCfg kmesh;
+    double Dfield_eV = 0.0;
+
+    MeshCfg kmesh;   // local / truncated output patch
+    MeshCfg bzmesh;  // full BZ mesh for global filling/doping
+
     std::vector<double> temperature_list;
-    std::vector<double> doping_list;
-    std::vector<double> filling_list;
     std::vector<double> mu_list;
 };
 
-// -------------------- batch chi --------------------
 struct CalChiConfig {
-    std::string data_dir  = "data";
+    std::string data_dir = "data";
     std::string para_file = "Source/Parameters/RG_para.json";
     std::string output_suffix = "0";
+
     std::string model = "sk";
-    std::string mode = "doping";
-    std::string boundary = "periodic";
-    std::string fermi_patch_path; 
+    std::string boundary = "open";
 
-    double Dfield_eV  = 0.0;
-    int iq_min = -10;
-    int iq_max = 10;
-    int jq_min = -10;
-    int jq_max = 10;
-    double eta = 0.0001;
+    std::string fermi_patch_path;
 
-    MeshCfg kmesh;
+    double Dfield_eV = 0.0;
+    double eta = 1e-5;
+
+    int iq = 0;
+    int jq = 0;
+
+    bool use_form_factor = true;
 
     std::vector<double> temperature_list;
-    std::vector<double> polar_list;
-    std::vector<double> doping_list;
-    std::vector<double> filling_list;
+    std::vector<double> polar_list; // stored in eV
     std::vector<double> mu_list;
-
 };
 
+struct CalChiV2Config {
+    std::string data_dir = "data";
+    std::string para_file = "Source/Parameters/RG_para.json";
+    std::string output_suffix = "0";
 
+    std::string model = "sk";
+    std::string boundary = "open";
 
-#pragma endregion
-// ============================================================================
+    double Dfield_eV = 0.0;
 
+    int Nk = 400;
+    int truncate_Nk = 40;
+    int iq = 0;
+    int jq = 0;
 
+    double eta = 1e-6;
+    bool use_form_factor = true;
 
+    std::vector<double> temperature_list;
+    std::vector<double> mu_list;
+};
 
-
-#pragma region ===================== Readers (JSON) =====================
+// ============================================================
+// Common readers
+// ============================================================
 
 inline RGPara read_rg_para(const std::string& para_file)
 {
     std::ifstream fin(para_file);
-    if (!fin)
-        throw std::runtime_error("Cannot open RG_para file: " + para_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open RG_para file: " + para_file
+        );
+    }
 
     json j;
     fin >> j;
 
     RGPara p;
 
-    // lattice
-    p.a0        = j.at("lattice").at("a0_A").get<double>();
-    p.d0        = j.at("lattice").at("d0_A").get<double>();
-    p.vacuum    = j.at("lattice").at("vacuum_A").get<double>();
-    p.pressure  = j.at("lattice").at("pressure").get<double>();
-    p.layer_num = j.at("lattice").at("layer_num").get<int>();
-    p.epsilon_r = j.at("lattice").at("epsilon_r").get<double>();
+    p.a0 =
+        j.at("lattice").at("a0_A").get<double>();
+
+    p.d0 =
+        j.at("lattice").at("d0_A").get<double>();
+
+    p.vacuum =
+        j.at("lattice").at("vacuum_A").get<double>();
+
+    p.pressure =
+        j.at("lattice").at("pressure").get<double>();
+
+    p.layer_num =
+        j.at("lattice").at("layer_num").get<int>();
+
+    p.epsilon_r =
+        j.at("lattice").at("epsilon_r").get<double>();
 
     return p;
 }
 
-inline TestStructureConfig read_test_structure_config(const std::string& config_file)
-{
+inline void read_io_common(
+    const json& j,
+    std::string& data_dir,
+    std::string& para_file
+) {
+    if (!j.contains("io")) {
+        return;
+    }
+
+    const auto& io = j.at("io");
+
+    if (io.contains("data_dir")) {
+        data_dir =
+            io.at("data_dir").get<std::string>();
+    }
+
+    if (io.contains("model_para")) {
+        para_file =
+            io.at("model_para").get<std::string>();
+    }
+}
+
+inline void read_mesh_cfg(
+    const json& jmesh,
+    MeshCfg& mesh
+) {
+    if (jmesh.contains("type")) {
+        mesh.type =
+            jmesh.at("type").get<std::string>();
+    }
+
+    if (jmesh.contains("Nk")) {
+        mesh.Nk =
+            jmesh.at("Nk").get<int>();
+    }
+
+    if (jmesh.contains("dk_frac")) {
+        mesh.dk_frac =
+            jmesh.at("dk_frac").get<double>();
+    }
+}
+
+// ============================================================
+// Task readers
+// Top-level task layout, no "tasks" wrapper
+// ============================================================
+
+inline TestStructureConfig read_test_structure_config(
+    const std::string& config_file
+) {
     std::ifstream fin(config_file);
-    if (!fin)
-        throw std::runtime_error("Cannot open config file: " + config_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
 
     json j;
     fin >> j;
 
     TestStructureConfig c;
 
-    // io
-    if (j.contains("io")) {
-        const auto& io = j.at("io");
-        if (io.contains("model_para"))
-            c.para_file = io.at("model_para").get<std::string>();
-        if (io.contains("data_dir"))
-            c.data_dir = io.at("data_dir").get<std::string>();
+    read_io_common(
+        j,
+        c.data_dir,
+        c.para_file
+    );
+
+    const auto& task =
+        j.at("structure_and_kpath");
+
+    if (task.contains("model")) {
+        c.model =
+            task.at("model").get<std::string>();
     }
 
-    // task-specific
-    const auto& task = j.at("tasks").at("structure_and_kpath");
-
-    if (task.contains("model"))
-        c.model = task.at("model").get<std::string>();
-
-    if (task.contains("GMKG") && task.at("GMKG").contains("Nk_seg"))
-        c.Nk_seg = task.at("GMKG").at("Nk_seg").get<int>();
+    if (
+        task.contains("GMKG")
+     && task.at("GMKG").contains("Nk_seg")
+    ) {
+        c.Nk_seg =
+            task.at("GMKG").at("Nk_seg").get<int>();
+    }
 
     return c;
 }
 
-inline TestBarebandConfig read_test_bareband_config(const std::string& config_file)
-{
+inline TestBarebandConfig read_test_bareband_config(
+    const std::string& config_file
+) {
     std::ifstream fin(config_file);
-    if (!fin) throw std::runtime_error("Cannot open config file: " + config_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
 
     json j;
     fin >> j;
 
     TestBarebandConfig c;
 
-    // io
-    if (j.contains("io")) {
-        const auto& io = j.at("io");
-        if (io.contains("data_dir"))   c.data_dir  = io.at("data_dir").get<std::string>();
-        if (io.contains("model_para")) c.para_file = io.at("model_para").get<std::string>();
+    read_io_common(
+        j,
+        c.data_dir,
+        c.para_file
+    );
+
+    const auto& task =
+        j.at("bareband");
+
+    if (task.contains("model")) {
+        c.model =
+            task.at("model").get<std::string>();
     }
 
-    // tasks.bareband
-    const auto& task = j.at("tasks").at("bareband");
+    if (task.contains("Dfield_eV")) {
+        c.Dfield_eV =
+            task.at("Dfield_eV").get<double>();
+    }
 
-    if (task.contains("model"))     c.model     = task.at("model").get<std::string>();
-    if (task.contains("output_suffix")) c.output_suffix = task.at("output_suffix").get<std::string>();
-    if (task.contains("Dfield_eV")) c.Dfield_eV = task.at("Dfield_eV").get<double>();
+    if (task.contains("output_suffix")) {
+        c.output_suffix =
+            task.at("output_suffix").get<std::string>();
+    }
 
-    auto read_path = [&](const json& jp, BarebandPathCfg& out) {
-        if (jp.contains("Nk_seg"))     out.Nk_seg = jp.at("Nk_seg").get<int>();
-        if (jp.contains("frac_local")) out.frac_local = jp.at("frac_local").get<double>();
-    };
+    auto read_path =
+        [](const json& jp, BarebandPathCfg& out) {
+            if (jp.contains("Nk_seg")) {
+                out.Nk_seg =
+                    jp.at("Nk_seg").get<int>();
+            }
 
-    if (task.contains("GMKG"))        read_path(task.at("GMKG"), c.GMKG);
-    if (task.contains("localK_MKKp")) read_path(task.at("localK_MKKp"), c.localK_MKKp);
+            if (jp.contains("frac_local")) {
+                out.frac_local =
+                    jp.at("frac_local").get<double>();
+            }
+        };
+
+    if (task.contains("GMKG")) {
+        read_path(task.at("GMKG"), c.GMKG);
+    }
+
+    if (task.contains("localK_MKKp")) {
+        read_path(task.at("localK_MKKp"), c.localK_MKKp);
+    }
 
     return c;
 }
 
-inline TestDOSConfig read_test_dos_config(const std::string& config_file)
-{
+inline TestDOSConfig read_test_dos_config(
+    const std::string& config_file
+) {
     std::ifstream fin(config_file);
-    if (!fin) throw std::runtime_error("Cannot open config file: " + config_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
 
     json j;
     fin >> j;
 
     TestDOSConfig c;
 
-    // io
-    if (j.contains("io")) {
-        const auto& io = j.at("io");
-        if (io.contains("data_dir"))   c.data_dir  = io.at("data_dir").get<std::string>();
-        if (io.contains("model_para")) c.para_file = io.at("model_para").get<std::string>();
+    read_io_common(
+        j,
+        c.data_dir,
+        c.para_file
+    );
+
+    const auto& task =
+        j.at("test_dos");
+
+    if (task.contains("model")) {
+        c.model =
+            task.at("model").get<std::string>();
     }
 
-    // tasks.test_dos
-    const auto& task = j.at("tasks").at("test_dos");
+    if (task.contains("T_K")) {
+        c.T_K =
+            task.at("T_K").get<double>();
+    }
 
-    if (task.contains("model"))     c.model     = task.at("model").get<std::string>();
-    if (task.contains("T_K"))       c.T_K       = task.at("T_K").get<double>();
-
-    // kmesh
     if (task.contains("kmesh")) {
-        const auto& km = task.at("kmesh");
-        if (km.contains("type"))    c.kmesh.type = km.at("type").get<std::string>();
-        if (km.contains("Nk"))      c.kmesh.Nk   = km.at("Nk").get<int>();
-        if (km.contains("dk_frac")) c.kmesh.dk_frac = km.at("dk_frac").get<double>();
+        read_mesh_cfg(
+            task.at("kmesh"),
+            c.kmesh
+        );
     }
 
-    // dos
     if (task.contains("dos")) {
-        const auto& d = task.at("dos");
-        if (d.contains("e_low"))  c.dos.e_low  = d.at("e_low").get<double>();
-        if (d.contains("e_high")) c.dos.e_high = d.at("e_high").get<double>();
-        if (d.contains("num_e"))  c.dos.num_e  = d.at("num_e").get<int>();
-        if (d.contains("eta"))    c.dos.eta    = d.at("eta").get<double>();
+        const auto& d =
+            task.at("dos");
+
+        if (d.contains("e_low")) {
+            c.dos.e_low =
+                d.at("e_low").get<double>();
+        }
+
+        if (d.contains("e_high")) {
+            c.dos.e_high =
+                d.at("e_high").get<double>();
+        }
+
+        if (d.contains("num_e")) {
+            c.dos.num_e =
+                d.at("num_e").get<int>();
+        }
+
+        if (d.contains("eta")) {
+            c.dos.eta =
+                d.at("eta").get<double>();
+        }
     }
 
-    const auto para = read_rg_para(c.para_file);
-    const auto& Dlist = task.at("DfieldList_meVnm^-1");
-    const double Dmin = Dlist.at("min").get<double>();
-    const double Dmax = Dlist.at("max").get<double>();
-    const int    nD   = Dlist.at("num").get<int>();
+    const auto& Dlist =
+        task.at("DfieldList_meVnm^-1");
 
-    if (nD < 1)
-        throw std::runtime_error("DfieldList_meVnm^-1.num must be >= 1");
-    if (Dmax < Dmin)
-        throw std::runtime_error("DfieldList_meVnm^-1.max must be >= min");
+    const double Dmin =
+        Dlist.at("min").get<double>();
 
-    c.DfieldList_meV = la::linspace(Dmin, Dmax, nD);
+    const double Dmax =
+        Dlist.at("max").get<double>();
+
+    const int nD =
+        Dlist.at("num").get<int>();
+
+    if (nD < 1) {
+        throw std::runtime_error(
+            "DfieldList_meVnm^-1.num must be >= 1"
+        );
+    }
+
+    if (Dmax < Dmin) {
+        throw std::runtime_error(
+            "DfieldList_meVnm^-1.max must be >= min"
+        );
+    }
+
+    c.DfieldList_meV =
+        la::linspace(Dmin, Dmax, nD);
 
     return c;
 }
 
-inline CalFermiConfig read_cal_fermi_config(const std::string& config_file)
-{
+inline CalFermiConfig read_cal_fermi_config(
+    const std::string& config_file
+) {
     std::ifstream fin(config_file);
-    if (!fin)
-        throw std::runtime_error("Cannot open config file: " + config_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
 
     json j;
     fin >> j;
 
     CalFermiConfig c;
 
-    // ---------------- io ----------------
-    if (j.contains("io")) {
-        const auto& io = j.at("io");
-        if (io.contains("data_dir"))   c.data_dir  = io.at("data_dir").get<std::string>();
-        if (io.contains("model_para")) c.para_file = io.at("model_para").get<std::string>();
+    read_io_common(
+        j,
+        c.data_dir,
+        c.para_file
+    );
+
+    const auto& task =
+        j.at("calculate_fermi");
+
+    if (task.contains("model")) {
+        c.model =
+            task.at("model").get<std::string>();
     }
 
-    // ---------------- task ----------------
-    const auto& task = j.at("tasks").at("calculate_fermi");
+    if (task.contains("Dfield_eV")) {
+        c.Dfield_eV =
+            task.at("Dfield_eV").get<double>();
+    }
 
-    if (task.contains("model"))         c.model         = task.at("model").get<std::string>();
-    if (task.contains("mode"))          c.mode          = task.at("mode").get<std::string>();
-    if (task.contains("Dfield_eV"))     c.Dfield_eV     = task.at("Dfield_eV").get<double>();
-    if (task.contains("output_suffix")) c.output_suffix = task.at("output_suffix").get<std::string>();
+    if (task.contains("output_suffix")) {
+        c.output_suffix =
+            task.at("output_suffix").get<std::string>();
+    }
 
-    // ---------------- kmesh ----------------
     if (task.contains("kmesh")) {
-        const auto& km = task.at("kmesh");
-        if (km.contains("type"))    c.kmesh.type = km.at("type").get<std::string>();
-        if (km.contains("Nk"))      c.kmesh.Nk   = km.at("Nk").get<int>();
-        if (km.contains("dk_frac")) c.kmesh.dk_frac = km.at("dk_frac").get<double>();
-    }
-
-    // ---------------- temperature (always required) ----------------
-    const auto& tlist = task.at("temperatureList_K");
-    const double tmin = tlist.at("min").get<double>();
-    const double tmax = tlist.at("max").get<double>();
-    const int    nt   = tlist.at("num").get<int>();
-
-    if (nt < 1)
-        throw std::runtime_error("temperatureList_K.num must be >= 1");
-    if (tmax < tmin)
-        throw std::runtime_error("temperatureList_K.max must be >= min");
-
-    c.temperature_list = la::linspace(tmin, tmax, nt);
-
-    // ============================================================
-    // mode = doping
-    // ============================================================
-    if (c.mode == "doping") {
-
-        const auto& dlist = task.at("dopingList_10^12cm^-2");
-        const double dmin = dlist.at("min").get<double>();
-        const double dmax = dlist.at("max").get<double>();
-        const int    nd   = dlist.at("num").get<int>();
-
-        if (nd < 1)
-            throw std::runtime_error("dopingList_10^12cm^-2.num must be >= 1");
-        if (dmax < dmin)
-            throw std::runtime_error("dopingList_10^12cm^-2.max must be >= min");
-
-        c.doping_list = la::linspace(dmin, dmax, nd);
-
-        // ---- doping -> filling ----
-        const auto para = read_rg_para(c.para_file);
-        const double a  = para.a0 - 0.00197 * para.pressure;
-
-        c.filling_list.resize(c.doping_list.size());
-        for (size_t i = 0; i < c.doping_list.size(); ++i) {
-            c.filling_list[i] = la::doping_to_filling(c.doping_list[i], a);
-        }
-
-        // mu_list ignored
-        c.mu_list.clear();
-    }
-
-    // ============================================================
-    // mode = mu
-    // ============================================================
-    else if (c.mode == "mu") {
-
-        const auto& mlist = task.at("muList_eV");
-        const double mmin = mlist.at("min").get<double>();
-        const double mmax = mlist.at("max").get<double>();
-        const int    nm   = mlist.at("num").get<int>();
-
-        if (nm < 1)
-            throw std::runtime_error("muList_eV.num must be >= 1");
-        if (mmax < mmin)
-            throw std::runtime_error("muList_eV.max must be >= min");
-
-        c.mu_list = la::linspace(mmin, mmax, nm);
-
-        // doping / filling ignored
-        c.doping_list.clear();
-        c.filling_list.clear();
-    }
-
-    // ============================================================
-    // unknown mode
-    // ============================================================
-    else {
-        throw std::runtime_error(
-            "calculate_fermi: unknown mode = \"" + c.mode +
-            "\" (must be \"doping\" or \"mu\")"
+        read_mesh_cfg(
+            task.at("kmesh"),
+            c.kmesh
         );
     }
+
+    if (task.contains("bzmesh")) {
+        read_mesh_cfg(
+            task.at("bzmesh"),
+            c.bzmesh
+        );
+    } else {
+        c.bzmesh.type = "BZ";
+        c.bzmesh.Nk = c.kmesh.Nk;
+        c.bzmesh.dk_frac = 0.0;
+    }
+
+    c.temperature_list =
+        read_range(task.at("temperatureList_K"));
+
+    c.mu_list =
+        read_range(task.at("muList_eV"));
 
     return c;
 }
 
-
-inline CalChiConfig read_cal_chi_config(const std::string& config_file)
-{
+inline CalChiConfig read_cal_chi_config(
+    const std::string& config_file
+) {
     std::ifstream fin(config_file);
-    if (!fin) throw std::runtime_error("Cannot open config file: " + config_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
 
     json j;
     fin >> j;
 
-    CalChiConfig c;
+    CalChiConfig cfg;
 
-    // -------------------------
-    // io
-    // -------------------------
-    if (j.contains("io")) {
-        const auto& io = j.at("io");
-        if (io.contains("data_dir"))   c.data_dir  = io.at("data_dir").get<std::string>();
-        if (io.contains("model_para")) c.para_file = io.at("model_para").get<std::string>();
+    read_io_common(
+        j,
+        cfg.data_dir,
+        cfg.para_file
+    );
+
+    const auto& c =
+        j.at("calculate_chi");
+
+    cfg.model =
+        c.value("model", cfg.model);
+
+    cfg.boundary =
+        c.value("boundary", cfg.boundary);
+
+    cfg.Dfield_eV =
+        c.value("Dfield_eV", cfg.Dfield_eV);
+
+    cfg.eta =
+        c.value("eta", cfg.eta);
+
+    cfg.iq =
+        c.value("iq", cfg.iq);
+
+    cfg.jq =
+        c.value("jq", cfg.jq);
+
+    cfg.fermi_patch_path =
+        c.value("fermi_patch_path", cfg.fermi_patch_path);
+
+    cfg.output_suffix =
+        c.value("output_suffix", cfg.output_suffix);
+
+    cfg.use_form_factor =
+        c.value("use_form_factor", cfg.use_form_factor);
+
+    cfg.polar_list =
+        read_range(c.at("polarList_meV"));
+
+    for (double& x : cfg.polar_list) {
+        x *= 1e-3; // meV -> eV
     }
 
-    // -------------------------
-    // tasks.calculate_chi
-    // -------------------------
-    const auto& task = j.at("tasks").at("calculate_chi");
+    cfg.temperature_list =
+        read_range(c.at("temperatureList_K"));
 
-    if (task.contains("model"))        c.model        = task.at("model").get<std::string>();
-    if (task.contains("mode"))         c.mode         = task.at("mode").get<std::string>();
-    if (task.contains("boundary"))     c.boundary     = task.at("boundary").get<std::string>();
-    if (task.contains("Dfield_eV"))    c.Dfield_eV    = task.at("Dfield_eV").get<double>();
-    if (task.contains("iq_min"))       c.iq_min       = task.at("iq_min").get<int>();
-    if (task.contains("iq_max"))       c.iq_max       = task.at("iq_max").get<int>();
-    if (task.contains("jq_min"))       c.jq_min       = task.at("jq_min").get<int>();
-    if (task.contains("jq_max"))       c.jq_max       = task.at("jq_max").get<int>();
-    if (task.contains("eta"))          c.eta          = task.at("eta").get<double>();
-    if (task.contains("output_suffix"))
-        c.output_suffix= task.at("output_suffix").get<std::string>();
-    if (task.contains("fermi_patch_path")) 
-        c.fermi_patch_path = task.at("fermi_patch_path").get<std::string>();
+    cfg.mu_list =
+        read_range(c.at("muList_eV"));
 
-    // -------------------------
-    // kmesh
-    // -------------------------
-    if (task.contains("kmesh")) {
-        const auto& km = task.at("kmesh");
-        if (km.contains("type"))       c.kmesh.type    = km.at("type").get<std::string>();
-        if (km.contains("Nk"))         c.kmesh.Nk      = km.at("Nk").get<int>();
-        if (km.contains("dk_frac"))    c.kmesh.dk_frac = km.at("dk_frac").get<double>();
-    }
-
-    if (!task.contains("temperatureList_K"))
-        throw std::runtime_error("calculate_chi: missing temperatureList_K");
-
-    {
-        const auto& tlist = task.at("temperatureList_K");
-        const double tmin = tlist.at("min").get<double>();
-        const double tmax = tlist.at("max").get<double>();
-        const int    nt   = tlist.at("num").get<int>();
-        if (nt < 1) throw std::runtime_error("temperatureList_K.num must be >= 1");
-        c.temperature_list = la::linspace(tmin, tmax, nt); // allow decreasing
-    }
-
-    if (!task.contains("polarList_meV"))
-        throw std::runtime_error("calculate_chi: missing polarList_meV");
-
-    {
-        const auto& plist = task.at("polarList_meV");
-        const double pmin = 0.001*plist.at("min").get<double>();
-        const double pmax = 0.001*plist.at("max").get<double>();
-        const int    np   = plist.at("num").get<int>();
-        if (np < 1) throw std::runtime_error("polarList_meV.num must be >= 1");
-        c.polar_list = la::linspace(pmin, pmax, np); // allow decreasing
-    }
-
-
-    // normalize mode
-    if (c.mode.empty()) c.mode = "doping";
-
-    // -------------------------
-    // mode-dependent lists
-    // -------------------------
-    if (c.mode == "doping") {
-
-        if (!task.contains("dopingList_10^12cm^-2"))
-            throw std::runtime_error("calculate_chi: mode=doping but missing dopingList_10^12cm^-2");
-
-        const auto& dlist = task.at("dopingList_10^12cm^-2");
-        const double dmin = dlist.at("min").get<double>();
-        const double dmax = dlist.at("max").get<double>();
-        const int    nd   = dlist.at("num").get<int>();
-        if (nd < 1) throw std::runtime_error("dopingList_10^12cm^-2.num must be >= 1");
-
-        c.doping_list = la::linspace(dmin, dmax, nd); // allow decreasing
-
-        // convert doping -> filling (metadata / fallback)
-        const auto para = read_rg_para(c.para_file);
-        const double a = para.a0 - 0.00197 * para.pressure;
-
-        c.filling_list.resize(c.doping_list.size());
-        for (size_t i = 0; i < c.doping_list.size(); ++i) {
-            c.filling_list[i] = la::doping_to_filling(c.doping_list[i], a);
-        }
-
-        // mu_list in this mode: ignore (leave empty)
-        c.mu_list.clear();
-
-    } else if (c.mode == "mu") {
-
-        if (!task.contains("muList_eV"))
-            throw std::runtime_error("calculate_chi: mode=mu but missing muList_eV");
-
-        const auto& mlist = task.at("muList_eV");
-        const double mmin = mlist.at("min").get<double>();
-        const double mmax = mlist.at("max").get<double>();
-        const int    nm   = mlist.at("num").get<int>();
-        if (nm < 1) throw std::runtime_error("muList_eV.num must be >= 1");
-
-        c.mu_list = la::linspace(mmin, mmax, nm); // allow decreasing
-
-        // doping/filling in this mode: not required (leave empty)
-        c.doping_list.clear();
-        c.filling_list.clear();
-
-    } else {
-        throw std::runtime_error("calculate_chi: unsupported mode = " + c.mode +
-                                 " (must be \"doping\" or \"mu\")");
-    }
-
-    return c;
+    return cfg;
 }
 
+inline CalChiV2Config read_cal_chi_v2_config(
+    const std::string& config_file
+) {
+    std::ifstream fin(config_file);
 
-#pragma endregion
-// ============================================================================
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
+
+    json j;
+    fin >> j;
+
+    CalChiV2Config cfg;
+
+    read_io_common(
+        j,
+        cfg.data_dir,
+        cfg.para_file
+    );
+
+    const auto& c =
+        j.at("calculate_chi_v2");
+
+    cfg.model =
+        c.value("model", cfg.model);
+
+    cfg.boundary =
+        c.value("boundary", cfg.boundary);
+
+    cfg.Dfield_eV =
+        c.value("Dfield_eV", cfg.Dfield_eV);
+
+    cfg.Nk =
+        c.value("Nk", cfg.Nk);
+
+    cfg.truncate_Nk =
+        c.value("truncate_Nk", cfg.truncate_Nk);
+
+    cfg.iq =
+        c.value("iq", cfg.iq);
+
+    cfg.jq =
+        c.value("jq", cfg.jq);
+
+    cfg.eta =
+        c.value("eta", cfg.eta);
+
+    cfg.use_form_factor =
+        c.value("use_form_factor", cfg.use_form_factor);
+
+    cfg.output_suffix =
+        c.value("output_suffix", cfg.output_suffix);
+
+    cfg.temperature_list =
+        read_range(c.at("temperatureList_K"));
+
+    cfg.mu_list =
+        read_range(c.at("muList_eV"));
+
+    return cfg;
+}
 
 } // namespace config

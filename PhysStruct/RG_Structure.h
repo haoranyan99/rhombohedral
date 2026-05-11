@@ -162,6 +162,7 @@ public:
         const int n_side = 2 * n_k + 1;
         const size_t N = size_t(n_side) * size_t(n_side);
         grid.resize(N);
+        grid.mesh_type = "square";
 
         // store step as dimensionless fraction
         grid.dx = dk_frac;
@@ -212,6 +213,7 @@ public:
         const int n_side = 2 * n_k + 1;                 // points per axis
         const size_t N = size_t(n_side) * size_t(n_side);
         grid.resize(N);
+        grid.mesh_type = "parallelogram";
 
         // step size: one integer step corresponds to dk_frac * b1/b2
         grid.dx = dk_frac;
@@ -254,48 +256,43 @@ public:
 
         core::GridData grid;
 
-        const int n_side = 2 * n_k + 1;                 // points per axis (square container)
-        const size_t N = size_t(n_side) * size_t(n_side);
-        grid.resize(N);
+        const int n_points = 1 + 3 * n_k * (n_k + 1);
 
-        // one integer step in iq/jq corresponds to dk_frac*b1 or dk_frac*b2
+        grid.resize(static_cast<size_t>(n_points));
+        grid.mesh_type = "hex";
+
         grid.dx = dk_frac;
         grid.dy = dk_frac;
 
-        auto& kvec  = grid.add<Vec2>("kvec").v;
-        auto& inHex = grid.add<unsigned char>("inside").v;
+        auto& kvec = grid.add<Vec2>("kvec").v;
 
-        const Vec2 center = K_;
-        const Vec2 b1 = b1_;
-        const Vec2 b2 = b2_;
-
-        const Vec2 g1 = dk_frac * b1;
-        const Vec2 g2 = dk_frac * b2;
-
-        // axial-hex metric: max(|i|,|j|,|i+j|) <= n_k
-        auto inside_hex = [n_k](int iq, int jq) -> bool {
-            const int a = std::abs(iq);
-            const int b = std::abs(jq);
-            const int c = std::abs(iq + jq);
-            const int m = std::max(a, std::max(b, c));
-            return (m <= n_k);
-        };
+        const Vec2 k_center = K_;
+        const Vec2 dk1 = dk_frac * b1_;
+        const Vec2 dk2 = dk_frac * b2_;
 
         size_t idx = 0;
-        for (int ix = 0; ix < n_side; ++ix) {
-            const int iq = ix - n_k;     // -n_k .. +n_k
 
-            for (int iy = 0; iy < n_side; ++iy, ++idx) {
-                const int jq = iy - n_k; // -n_k .. +n_k
+        for (int iq = -n_k; iq <= n_k; ++iq) {
+            const int jq_min = std::max(-n_k, -iq - n_k);
+            const int jq_max = std::min( n_k, -iq + n_k);
 
+            for (int jq = jq_min; jq <= jq_max; ++jq) {
                 grid.iq[idx] = iq;
                 grid.jq[idx] = jq;
 
-                const Vec2 k = center + double(iq) * g1 + double(jq) * g2;
-                kvec[idx] = k;
+                kvec[idx] =
+                    k_center
+                + static_cast<double>(iq) * dk1
+                + static_cast<double>(jq) * dk2;
 
-                inHex[idx] = inside_hex(iq, jq) ? (unsigned char)1 : (unsigned char)0;
+                ++idx;
             }
+        }
+
+        if (idx != static_cast<size_t>(n_points)) {
+            throw std::runtime_error(
+                "RG_Structure::generate_localK_kmesh_hex_b1b2: point count mismatch"
+            );
         }
 
         return grid;
@@ -314,6 +311,7 @@ public:
         core::GridData grid;
         const size_t N = size_t(N1) * size_t(N2);
         grid.resize(N);
+        grid.mesh_type = "parallelogram";
         grid.dx = 1.0 / double(N1);
         grid.dy = 1.0 / double(N2);
 

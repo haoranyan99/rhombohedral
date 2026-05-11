@@ -37,7 +37,6 @@ public:
     using RG_ModelBase::cal_dos_gaussian;
     using RG_ModelBase::cal_chi_grid_Ef;
     using RG_ModelBase::find_EF_from_filling;
-    using RG_ModelBase::cal_fermi_patch_from_filling;
 
     // Integer-format hopping record: m n x y z t
     struct HmnRInt {
