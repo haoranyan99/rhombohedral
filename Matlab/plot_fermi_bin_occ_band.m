@@ -1,7 +1,5 @@
 function plot_fermi_bin_occ_band()
 
-clc;
-close all;
 
 % ============================================================
 % USER SETTINGS
@@ -11,7 +9,7 @@ band_idx = 6;
 % "occ"    -> occupation
 % "fs"     -> f(1-f)
 % "energy" -> |E-EF|
-plot_mode = "fs";
+plot_mode = "occ";
 
 a = 2.46;
 

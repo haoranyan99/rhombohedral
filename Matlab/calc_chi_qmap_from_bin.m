@@ -10,8 +10,8 @@ function calc_chi_qmap_from_bin()
 %   qy = jq * F.dy
 % ============================================================
 
-qx_min = -0.005;
-qx_max =  0;
+qx_min =  0;
+qx_max =  0.005;
 qy_min =  0;
 qy_max =  0.005;
 
