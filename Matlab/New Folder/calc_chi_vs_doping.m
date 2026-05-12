@@ -3,8 +3,8 @@ function plot_chi_vs_doping()
 % ============================================================
 % USER SETTINGS
 % ============================================================
-iq_target = 3;
-jq_target = -3;
+iq_target = 5;
+jq_target = 0;
 
 eta = 1e-5;
 use_form_factor = true;

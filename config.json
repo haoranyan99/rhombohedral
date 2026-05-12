@@ -31,11 +31,11 @@
 
     "kmesh": {
       "type": "b1b2",
-      "Nk": 150,
+      "Nk": 100,
       "dk_frac": 0.00125
     },
 
-    "output_suffix": "150_b1b2_0.00125",
+    "output_suffix": "100_b1b2_0.00125_v2",
 
     "bzmesh": {
       "type": "BZ",
@@ -49,8 +49,8 @@
     },
 
     "muList_eV": {
-      "min": 0.5,
-      "max": 0.8,
+      "min": 0.60,
+      "max": 0.63,
       "num": 31
     }
   },
@@ -85,32 +85,5 @@
 
     "fermi_patch_path": "data/fermi_sk_mu_100_b1b2_0.00125/D-0.012",
     "output_suffix": "_100_b1b2_0.00125"
-  },
-
-  "calculate_chi_v2": {
-    "model": "sk",
-    "mode": "mu",
-    "boundary": "open",
-    "Dfield_eV": -0.012,
-    "Nk": 400,
-    "truncate_Nk": 400,
-    "iq": 3,
-    "jq": -3,
-    "eta": 0.000001,
-    "use_form_factor": true,
-
-    "temperatureList_K": {
-      "min": 6.5,
-      "max": 8.0,
-      "num": 1
-    },
-
-    "muList_eV": {
-      "min": 0.5,
-      "max": 0.8,
-      "num": 31
-    },
-
-    "output_suffix": "localK_Nk40"
   }
 }

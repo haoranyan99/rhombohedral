@@ -12,8 +12,8 @@ if ~isfolder(default_root)
     default_root = pwd;
 end
 
-iq_default = 3;
-jq_default = -3;
+iq_default = 12;
+jq_default = -6;
 FS = 14;
 
 % =========================
@@ -320,22 +320,17 @@ end
 % ============================================================
 function C = detect_cols_chi_(M)
 
-ncol = size(M,2);
-
 C = struct();
-C.iq = 1;
-C.jq = 2;
-C.Re = 5;
 
 % Format A:
-% iq jq qx qy Re Im ...
-%
-% Format B:
-% idx iq jq qx qy Re Im ...
-if ncol >= 8
-    C.iq = 2;
-    C.jq = 3;
-    C.Re = 6;
+% iq jq qx qy chi_real chi_imag nKpair nK
+% Example: 12 -6 0 -0.0153 0.0730 ...
+if size(M,2) >= 6
+    C.iq = 1;
+    C.jq = 2;
+    C.Re = 5;
+else
+    error("Chi numeric data has too few columns.");
 end
 
 end
