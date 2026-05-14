@@ -269,6 +269,17 @@ int main(int argc, char** argv)
                         ofs << "# use_form_factor = "
                             << (cfg.use_form_factor ? "true" : "false")
                             << "\n";
+                        ofs << "# form_factor_kind = "
+                            << (
+                                cfg.use_form_factor
+                                ? (
+                                    param.has_shear_projection
+                                    ? "shear_projection_gxgy"
+                                    : "density_overlap"
+                                  )
+                                : "none"
+                               )
+                            << "\n";
                         ofs << "# iq = " << cfg.iq << "\n";
                         ofs << "# jq = " << cfg.jq << "\n";
                         ofs << "# q_unit = iq * dx * b1 + jq * dy * b2\n";

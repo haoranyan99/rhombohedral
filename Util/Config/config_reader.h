@@ -121,6 +121,7 @@ struct CalFermiConfig {
     std::string para_file = "Source/Parameters/RG_para.json";
 
     double Dfield_eV = 0.0;
+    double shear_delta_A = 1.0e-3;
 
     MeshCfg kmesh;   // local / truncated output patch
     MeshCfg bzmesh;  // full BZ mesh for global filling/doping
@@ -496,6 +497,11 @@ inline CalFermiConfig read_cal_fermi_config(
     if (task.contains("Dfield_eV")) {
         c.Dfield_eV =
             task.at("Dfield_eV").get<double>();
+    }
+
+    if (task.contains("shear_delta_A")) {
+        c.shear_delta_A =
+            task.at("shear_delta_A").get<double>();
     }
 
     if (task.contains("output_suffix")) {

@@ -115,6 +115,17 @@ public:
     // model-specific H(k)
     Eigen::MatrixXcd build_Hk(const Vec2& k, bool enforce_hermitian = true) const override;
 
+    std::vector<HmnRInt> generate_HmnRInt_list_with_shear(
+        const Vec2& first_layer_shear
+    ) const;
+
+    Eigen::MatrixXcd build_Hk_from_hoppings(
+        const Vec2& k,
+        const std::vector<HmnRInt>& hops,
+        bool enforce_hermitian = true,
+        bool include_Dfield = true
+    ) const;
+
     void write_info(std::ostream& os, const std::string& prefix = "# ") const override;
 
 private:
@@ -128,6 +139,10 @@ private:
 
     void build_enlarged_atoms_(std::vector<Vec3>& enlarge_atoms,
                               std::vector<NRInfo>& nR_list) const;
+
+    void build_enlarged_atoms_from_base_(const std::vector<Vec3>& base,
+                                         std::vector<Vec3>& enlarge_atoms,
+                                         std::vector<NRInfo>& nR_list) const;
 
     void build_pair_lists_cutoff_(const std::vector<Vec3>& atoms_cart,
                                   const std::vector<Vec3>& enlarge_atoms,
@@ -175,8 +190,20 @@ inline std::vector<RG_SKModel::Vec3> RG_SKModel::atoms_cart_() const {
 }
 
 inline Eigen::MatrixXcd RG_SKModel::build_Hk(const Vec2& k, bool enforce_hermitian) const {
-    const auto& hops = ensure_hoppings_cached();
+    return build_Hk_from_hoppings(
+        k,
+        ensure_hoppings_cached(),
+        enforce_hermitian,
+        true
+    );
+}
 
+inline Eigen::MatrixXcd RG_SKModel::build_Hk_from_hoppings(
+    const Vec2& k,
+    const std::vector<HmnRInt>& hops,
+    bool enforce_hermitian,
+    bool include_Dfield
+) const {
     const int norb = static_cast<int>(st_.atoms().size());
     Eigen::MatrixXcd H = Eigen::MatrixXcd::Zero(norb, norb);
 
@@ -194,7 +221,7 @@ inline Eigen::MatrixXcd RG_SKModel::build_Hk(const Vec2& k, bool enforce_hermiti
     }
 
     // ---- static D-field part (use base's Dfield_) ----
-    if (Dfield_ != 0.0) {
+    if (include_Dfield && Dfield_ != 0.0) {
         const int Nl = st_.nLayer();
         H += RG_ModelBase::add_Dfield_(norb, Nl, Dfield_);
     }
@@ -208,6 +235,15 @@ inline void RG_SKModel::build_enlarged_atoms_(std::vector<Vec3>& enlarge_atoms,
 {
     if (st_.nLayer() <= 0) throw std::runtime_error("RG_SKModel: structure not set");
     const auto base = atoms_cart_();
+    build_enlarged_atoms_from_base_(base, enlarge_atoms, nR_list);
+}
+
+inline void RG_SKModel::build_enlarged_atoms_from_base_(
+    const std::vector<Vec3>& base,
+    std::vector<Vec3>& enlarge_atoms,
+    std::vector<NRInfo>& nR_list
+) const
+{
     const int norb = static_cast<int>(base.size());
 
     enlarge_atoms.clear();
@@ -231,6 +267,36 @@ inline void RG_SKModel::build_enlarged_atoms_(std::vector<Vec3>& enlarge_atoms,
             }
         }
     }
+}
+
+inline std::vector<RG_SKModel::HmnRInt>
+RG_SKModel::generate_HmnRInt_list_with_shear(
+    const Vec2& first_layer_shear
+) const {
+    std::vector<Vec3> base = atoms_cart_();
+    const auto& meta = st_.atoms();
+
+    if (base.size() != meta.size()) {
+        throw std::runtime_error(
+            "generate_HmnRInt_list_with_shear: atom metadata size mismatch"
+        );
+    }
+
+    for (size_t i = 0; i < base.size(); ++i) {
+        if (meta[i].layer == 0) {
+            base[i].x() += first_layer_shear.x();
+            base[i].y() += first_layer_shear.y();
+        }
+    }
+
+    std::vector<Vec3> enlarge_atoms;
+    std::vector<NRInfo> nR_list;
+    build_enlarged_atoms_from_base_(base, enlarge_atoms, nR_list);
+
+    std::vector<int> ind1_list, ind2_list;
+    build_pair_lists_cutoff_(base, enlarge_atoms, nR_list, ind1_list, ind2_list);
+
+    return cal_HmnR_list_sk_int_(base, enlarge_atoms, ind1_list, ind2_list, nR_list);
 }
 
 inline void RG_SKModel::build_pair_lists_cutoff_(const std::vector<Vec3>& atoms_cart,

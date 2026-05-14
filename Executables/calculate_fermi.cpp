@@ -12,6 +12,7 @@
 #include <fstream>
 #include <cstdint>
 #include <cstring>
+#include <complex>
 
 #ifdef USE_MPI
   #include <mpi.h>
@@ -85,6 +86,7 @@ static core::GridData make_kmesh(
 // double dx
 // double dy
 // char mesh_type[32]
+// int32 has_shear_projection        (version >= 4)
 //
 // Per k:
 // int32 iq
@@ -96,6 +98,10 @@ static core::GridData make_kmesh(
 // double occ_band[dim]
 // double evec_re[dim*dim]
 // double evec_im[dim*dim]
+// double shear_gx_re[dim*dim]       (if has_shear_projection)
+// double shear_gx_im[dim*dim]
+// double shear_gy_re[dim*dim]
+// double shear_gy_im[dim*dim]
 // ============================================================
 static void write_fermi_patch_bin(
     const std::string& out_path,
@@ -119,14 +125,33 @@ static void write_fermi_patch_bin(
     const auto& evecReF = fsgrid.get<std::vector<double>>("evec_re").v;
     const auto& evecImF = fsgrid.get<std::vector<double>>("evec_im").v;
 
+    const std::vector<std::vector<double>>* shearGxReF = nullptr;
+    const std::vector<std::vector<double>>* shearGxImF = nullptr;
+    const std::vector<std::vector<double>>* shearGyReF = nullptr;
+    const std::vector<std::vector<double>>* shearGyImF = nullptr;
+
+    try {
+        shearGxReF = &fsgrid.get<std::vector<double>>("shear_gx_re").v;
+        shearGxImF = &fsgrid.get<std::vector<double>>("shear_gx_im").v;
+        shearGyReF = &fsgrid.get<std::vector<double>>("shear_gy_re").v;
+        shearGyImF = &fsgrid.get<std::vector<double>>("shear_gy_im").v;
+    } catch (...) {
+        shearGxReF = nullptr;
+        shearGxImF = nullptr;
+        shearGyReF = nullptr;
+        shearGyImF = nullptr;
+    }
+
     if (fsgrid.size() == 0) {
         throw std::runtime_error("write_fermi_patch_bin: empty fsgrid");
     }
 
     const int32_t magic   = 20260510;
-    const int32_t version = 3;
+    const int32_t version = 4;
     const int32_t NkTot   = static_cast<int32_t>(fsgrid.size());
     const int32_t dim     = static_cast<int32_t>(evalsF[0].size());
+    const int32_t has_shear_projection =
+        (shearGxReF && shearGxImF && shearGyReF && shearGyImF) ? 1 : 0;
 
     char mesh_type[32] = {};
     std::snprintf(
@@ -149,6 +174,10 @@ static void write_fermi_patch_bin(
     ofs.write(reinterpret_cast<const char*>(&fsgrid.dx), sizeof(fsgrid.dx));
     ofs.write(reinterpret_cast<const char*>(&fsgrid.dy), sizeof(fsgrid.dy));
     ofs.write(reinterpret_cast<const char*>(mesh_type), sizeof(mesh_type));
+    ofs.write(
+        reinterpret_cast<const char*>(&has_shear_projection),
+        sizeof(has_shear_projection)
+    );
 
     for (size_t ik = 0; ik < fsgrid.size(); ++ik) {
         const int32_t iq = static_cast<int32_t>(fsgrid.iq[ik]);
@@ -193,7 +222,138 @@ static void write_fermi_patch_bin(
             reinterpret_cast<const char*>(evecImF[ik].data()),
             sizeof(double) * dim * dim
         );
+
+        if (has_shear_projection) {
+            if ((int)(*shearGxReF)[ik].size() != dim * dim ||
+                (int)(*shearGxImF)[ik].size() != dim * dim ||
+                (int)(*shearGyReF)[ik].size() != dim * dim ||
+                (int)(*shearGyImF)[ik].size() != dim * dim)
+            {
+                throw std::runtime_error(
+                    "write_fermi_patch_bin: inconsistent shear projection size"
+                );
+            }
+
+            ofs.write(
+                reinterpret_cast<const char*>((*shearGxReF)[ik].data()),
+                sizeof(double) * dim * dim
+            );
+            ofs.write(
+                reinterpret_cast<const char*>((*shearGxImF)[ik].data()),
+                sizeof(double) * dim * dim
+            );
+            ofs.write(
+                reinterpret_cast<const char*>((*shearGyReF)[ik].data()),
+                sizeof(double) * dim * dim
+            );
+            ofs.write(
+                reinterpret_cast<const char*>((*shearGyImF)[ik].data()),
+                sizeof(double) * dim * dim
+            );
+        }
     }
+}
+
+static void attach_shear_projection_matrices(
+    core::GridData& fsgrid,
+    const rg::RG_SKModel& sk_model,
+    double delta_A
+) {
+    using cd = std::complex<double>;
+
+    fsgrid.assert_consistent();
+
+    if (!(delta_A > 0.0)) {
+        throw std::runtime_error("attach_shear_projection_matrices: delta_A must be > 0");
+    }
+
+    const auto& kvecF   = fsgrid.get<rg::Vec2>("kvec").v;
+    const auto& evalsF  = fsgrid.get<std::vector<double>>("evals").v;
+    const auto& evecReF = fsgrid.get<std::vector<double>>("evec_re").v;
+    const auto& evecImF = fsgrid.get<std::vector<double>>("evec_im").v;
+
+    if (fsgrid.size() == 0) {
+        throw std::runtime_error("attach_shear_projection_matrices: empty fsgrid");
+    }
+
+    const int dim = static_cast<int>(evalsF[0].size());
+    if (dim <= 0) {
+        throw std::runtime_error("attach_shear_projection_matrices: dim <= 0");
+    }
+
+    auto& gxReF = fsgrid.add<std::vector<double>>("shear_gx_re").v;
+    auto& gxImF = fsgrid.add<std::vector<double>>("shear_gx_im").v;
+    auto& gyReF = fsgrid.add<std::vector<double>>("shear_gy_re").v;
+    auto& gyImF = fsgrid.add<std::vector<double>>("shear_gy_im").v;
+
+    for (size_t ik = 0; ik < fsgrid.size(); ++ik) {
+        gxReF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
+        gxImF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
+        gyReF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
+        gyImF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
+    }
+
+    const auto hops_px =
+        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(delta_A, 0.0));
+    const auto hops_mx =
+        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(-delta_A, 0.0));
+    const auto hops_py =
+        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(0.0, delta_A));
+    const auto hops_my =
+        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(0.0, -delta_A));
+
+    const double inv_2delta = 1.0 / (2.0 * delta_A);
+
+    for (size_t ik = 0; ik < fsgrid.size(); ++ik) {
+        if ((int)evecReF[ik].size() != dim * dim ||
+            (int)evecImF[ik].size() != dim * dim)
+        {
+            throw std::runtime_error(
+                "attach_shear_projection_matrices: evec size mismatch"
+            );
+        }
+
+        Eigen::MatrixXcd U(dim, dim);
+        for (int a = 0; a < dim; ++a) {
+            for (int b = 0; b < dim; ++b) {
+                const size_t p =
+                    static_cast<size_t>(a) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(b);
+
+                U(a, b) = cd(evecReF[ik][p], evecImF[ik][p]);
+            }
+        }
+
+        const Eigen::MatrixXcd Hpx =
+            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_px, true, false);
+        const Eigen::MatrixXcd Hmx =
+            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_mx, true, false);
+        const Eigen::MatrixXcd Hpy =
+            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_py, true, false);
+        const Eigen::MatrixXcd Hmy =
+            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_my, true, false);
+
+        const Eigen::MatrixXcd Gx = (Hpx - Hmx) * inv_2delta;
+        const Eigen::MatrixXcd Gy = (Hpy - Hmy) * inv_2delta;
+
+        const Eigen::MatrixXcd Px = U.adjoint() * Gx * U;
+        const Eigen::MatrixXcd Py = U.adjoint() * Gy * U;
+
+        for (int b = 0; b < dim; ++b) {
+            for (int m = 0; m < dim; ++m) {
+                const size_t p =
+                    static_cast<size_t>(b) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(m);
+
+                gxReF[ik][p] = Px(b, m).real();
+                gxImF[ik][p] = Px(b, m).imag();
+                gyReF[ik][p] = Py(b, m).real();
+                gyImF[ik][p] = Py(b, m).imag();
+            }
+        }
+    }
+
+    fsgrid.assert_consistent();
 }
 
 int main(int argc, char** argv)
@@ -298,6 +458,7 @@ int main(int argc, char** argv)
             std::cout << "layers     = " << para.layer_num << "\n";
             std::cout << "pressure   = " << para.pressure << "\n";
             std::cout << "Dfield     = " << cfg.Dfield_eV << "\n";
+            std::cout << "shear_delta_A = " << cfg.shear_delta_A << "\n";
 
             std::cout << "kmesh      = " << cfg.kmesh.type
                       << " Nk=" << cfg.kmesh.Nk
@@ -378,6 +539,17 @@ int main(int argc, char** argv)
 
                 if (rank != 0) {
                     continue;
+                }
+
+                if (cfg.model == "sk") {
+                    auto* sk =
+                        dynamic_cast<rg::RG_SKModel*>(model_ptr.get());
+
+                    attach_shear_projection_matrices(
+                        fsgrid,
+                        *sk,
+                        cfg.shear_delta_A
+                    );
                 }
 
                 const double EF_used = mu;
