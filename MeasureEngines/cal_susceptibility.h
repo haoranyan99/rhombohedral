@@ -34,6 +34,10 @@ struct cal_chi_param {
 
     double doping  = 0.0;
     double filling = 0.0;
+    double doping_spin = 0.0;
+    double filling_spin = 0.0;
+    int spin_sign = 0;
+    bool has_spin_metadata = false;
 
     double polar_mu = 0.0;
     double eta = 1e-6;
@@ -47,7 +51,7 @@ struct cal_chi_param {
 
     bool boundary_periodic = false;
     bool use_form_factor = true;
-    bool has_shear_projection = false;
+    bool diagonal_band_only = false;
 
     std::string mesh_type;
 };
@@ -82,7 +86,10 @@ inline core::GridData read_fermiPatch_bin(
     double filling = 0.0;
     double dx = 0.0;
     double dy = 0.0;
-    int32_t has_shear_projection_i32 = 0;
+    int32_t has_legacy_shear_projection_i32 = 0;
+    int32_t spin_sign_i32 = 0;
+    double doping_spin = 0.0;
+    double filling_spin = 0.0;
 
     char mesh_type_buf[32] = {};
 
@@ -108,22 +115,47 @@ inline core::GridData read_fermiPatch_bin(
         throw std::runtime_error("read_fermiPatch_bin: wrong magic number");
     }
 
-    if (version != 3 && version != 4) {
+    if (version != 3 && version != 4 && version != 5) {
         throw std::runtime_error("read_fermiPatch_bin: unsupported version");
     }
 
-    if (version >= 4) {
+    if (version == 4) {
         ifs.read(
-            reinterpret_cast<char*>(&has_shear_projection_i32),
-            sizeof(has_shear_projection_i32)
+            reinterpret_cast<char*>(&has_legacy_shear_projection_i32),
+            sizeof(has_legacy_shear_projection_i32)
         );
 
         if (!ifs) {
             throw std::runtime_error(
-                "read_fermiPatch_bin: failed to read v4 shear flag: "
+                "read_fermiPatch_bin: failed to read v4 legacy shear flag: "
                 + file_path
             );
         }
+    }
+
+    if (version >= 5) {
+        ifs.read(
+            reinterpret_cast<char*>(&spin_sign_i32),
+            sizeof(spin_sign_i32)
+        );
+        ifs.read(
+            reinterpret_cast<char*>(&doping_spin),
+            sizeof(doping_spin)
+        );
+        ifs.read(
+            reinterpret_cast<char*>(&filling_spin),
+            sizeof(filling_spin)
+        );
+
+        if (!ifs) {
+            throw std::runtime_error(
+                "read_fermiPatch_bin: failed to read v5 spin metadata: "
+                + file_path
+            );
+        }
+    } else {
+        doping_spin = doping;
+        filling_spin = filling;
     }
 
     if (NkTot_i32 <= 0 || dim_i32 <= 0) {
@@ -145,20 +177,8 @@ inline core::GridData read_fermiPatch_bin(
     auto& evecReF = g.add<std::vector<double>>("evec_re").v;
     auto& evecImF = g.add<std::vector<double>>("evec_im").v;
 
-    std::vector<std::vector<double>>* shearGxReF = nullptr;
-    std::vector<std::vector<double>>* shearGxImF = nullptr;
-    std::vector<std::vector<double>>* shearGyReF = nullptr;
-    std::vector<std::vector<double>>* shearGyImF = nullptr;
-
-    const bool has_shear_projection =
-        (version >= 4 && has_shear_projection_i32 != 0);
-
-    if (has_shear_projection) {
-        shearGxReF = &g.add<std::vector<double>>("shear_gx_re").v;
-        shearGxImF = &g.add<std::vector<double>>("shear_gx_im").v;
-        shearGyReF = &g.add<std::vector<double>>("shear_gy_re").v;
-        shearGyImF = &g.add<std::vector<double>>("shear_gy_im").v;
-    }
+    const bool has_legacy_shear_projection =
+        (version >= 4 && has_legacy_shear_projection_i32 != 0);
 
     for (size_t ik = 0; ik < NkTot; ++ik) {
         int32_t iq = 0;
@@ -204,31 +224,14 @@ inline core::GridData read_fermiPatch_bin(
             sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
         );
 
-        if (has_shear_projection) {
-            (*shearGxReF)[ik].resize(static_cast<size_t>(dim) * static_cast<size_t>(dim));
-            (*shearGxImF)[ik].resize(static_cast<size_t>(dim) * static_cast<size_t>(dim));
-            (*shearGyReF)[ik].resize(static_cast<size_t>(dim) * static_cast<size_t>(dim));
-            (*shearGyImF)[ik].resize(static_cast<size_t>(dim) * static_cast<size_t>(dim));
+        if (has_legacy_shear_projection) {
+            const std::streamoff nbytes =
+                static_cast<std::streamoff>(4)
+              * static_cast<std::streamoff>(dim)
+              * static_cast<std::streamoff>(dim)
+              * static_cast<std::streamoff>(sizeof(double));
 
-            ifs.read(
-                reinterpret_cast<char*>((*shearGxReF)[ik].data()),
-                sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
-            );
-
-            ifs.read(
-                reinterpret_cast<char*>((*shearGxImF)[ik].data()),
-                sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
-            );
-
-            ifs.read(
-                reinterpret_cast<char*>((*shearGyReF)[ik].data()),
-                sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
-            );
-
-            ifs.read(
-                reinterpret_cast<char*>((*shearGyImF)[ik].data()),
-                sizeof(double) * static_cast<size_t>(dim) * static_cast<size_t>(dim)
-            );
+            ifs.seekg(nbytes, std::ios::cur);
         }
 
         if (!ifs) {
@@ -249,10 +252,12 @@ inline core::GridData read_fermiPatch_bin(
     param.T_K = T_K;
     param.doping = doping;
     param.filling = filling;
+    param.doping_spin = doping_spin;
+    param.filling_spin = filling_spin;
+    param.spin_sign = static_cast<int>(spin_sign_i32);
+    param.has_spin_metadata = (version >= 5);
     param.mesh_type = std::string(mesh_type_buf);
     param.area_density = dx * dy;
-    param.has_shear_projection = has_shear_projection;
-
     g.assert_consistent();
     return g;
 }
@@ -366,25 +371,6 @@ inline double form_factor_(
     return std::norm(ov);
 }
 
-inline double shear_projection_factor_(
-    const std::vector<double>& gx_re,
-    const std::vector<double>& gx_im,
-    const std::vector<double>& gy_re,
-    const std::vector<double>& gy_im,
-    int dim,
-    int band1,
-    int band2
-) {
-    const size_t p =
-        static_cast<size_t>(band1) * static_cast<size_t>(dim)
-      + static_cast<size_t>(band2);
-
-    const cd gx(gx_re[p], gx_im[p]);
-    const cd gy(gy_re[p], gy_im[p]);
-
-    return std::norm(gx) + std::norm(gy);
-}
-
 inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
     const core::GridData& fgrid,
     rgio::cal_chi_param param
@@ -413,25 +399,6 @@ inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
     const auto& occ    = fgrid.get<std::vector<double>>("occ_band").v;
     const auto& evecRe = fgrid.get<std::vector<double>>("evec_re").v;
     const auto& evecIm = fgrid.get<std::vector<double>>("evec_im").v;
-
-    const std::vector<std::vector<double>>* shearGxRe = nullptr;
-    const std::vector<std::vector<double>>* shearGxIm = nullptr;
-    const std::vector<std::vector<double>>* shearGyRe = nullptr;
-    const std::vector<std::vector<double>>* shearGyIm = nullptr;
-
-    try {
-        shearGxRe = &fgrid.get<std::vector<double>>("shear_gx_re").v;
-        shearGxIm = &fgrid.get<std::vector<double>>("shear_gx_im").v;
-        shearGyRe = &fgrid.get<std::vector<double>>("shear_gy_re").v;
-        shearGyIm = &fgrid.get<std::vector<double>>("shear_gy_im").v;
-        param.has_shear_projection = true;
-    } catch (...) {
-        shearGxRe = nullptr;
-        shearGxIm = nullptr;
-        shearGyRe = nullptr;
-        shearGyIm = nullptr;
-        param.has_shear_projection = false;
-    }
 
     rgio::cal_chi_result result;
     result.doping = param.doping;
@@ -542,31 +509,23 @@ inline rgio::cal_chi_result cal_chi_grid_from_fermiPatch(
             const double Eb = evals[ik1][static_cast<size_t>(b)];
 
             for (int m = 0; m < dim; ++m) {
+                if (param.diagonal_band_only && m != b) {
+                    continue;
+                }
+
                 const double Em = evals[ik2][static_cast<size_t>(m)];
 
                 double FF = 1.0;
                 if (param.use_form_factor) {
-                    if (param.has_shear_projection) {
-                        FF = shear_projection_factor_(
-                            (*shearGxRe)[ik1],
-                            (*shearGxIm)[ik1],
-                            (*shearGyRe)[ik1],
-                            (*shearGyIm)[ik1],
-                            dim,
-                            b,
-                            m
-                        );
-                    } else {
-                        FF = form_factor_(
-                            evecRe[ik1],
-                            evecIm[ik1],
-                            evecRe[ik2],
-                            evecIm[ik2],
-                            dim,
-                            b,
-                            m
-                        );
-                    }
+                    FF = form_factor_(
+                        evecRe[ik1],
+                        evecIm[ik1],
+                        evecRe[ik2],
+                        evecIm[ik2],
+                        dim,
+                        b,
+                        m
+                    );
                 }
 
                 if (!use_polar) {

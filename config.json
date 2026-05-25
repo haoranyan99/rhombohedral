@@ -17,17 +17,54 @@
     "output_suffix": "_Nk1000"
   },
 
-  "test_dos": {
+  "calculate_dos": {
     "model": "sk",
-    "DfieldList_meVnm^-1": { "min": -160, "max": 10000, "num": 1 },
-    "kmesh": { "type": "BZ", "Nk": 1000, "dk_frac": 0.004 },
-    "T_K": 0,
-    "dos": { "e_low": 0.6000, "e_high": 1.0000, "num_e": 4001, "eta": 0.002 }
+    "DfieldList_eV": { "min": -0.01, "max": 0, "num": 1 },
+    "kmesh": { "type": "BZ", "Nk": 200, "dk_frac": 0.004 },
+    "T_K": 6.4,
+    "dos": { "e_low": 0.5000, "e_high": 0.8000, "num_e": 3001, "eta": 0.002 },
+    "output_suffix": "Nk200_D-0.01"
   },
 
   "calculate_fermi": {
     "model": "sk",
-    "Dfield_eV": -0.012,
+    "Dfield_eV": -0.01,
+    "magnetic_field": {
+      "BList_T": {
+        "min": 0,
+        "max": 1,
+        "num": 2
+      },
+      "g_factor": 2.0,
+      "orbital_derivative_dk": 1e-5
+    },
+
+    "kmesh": {
+      "type": "b1b2",
+      "Nk": 50,
+      "dk_frac": 0.00125
+    },
+
+    "output_suffix": "auto",
+
+    "temperatureList_K": {
+      "min": 6.4,
+      "max": 8.0,
+      "num": 1
+    },
+
+    "muList_eV": {
+      "min": 0.50,
+      "max": 0.80,
+      "num": 301  
+    }
+  },
+
+  "calculate_orbital_moment": {
+    "model": "sk",
+    "mode": "kmesh",
+    "Dfield_eV": -0.01,
+    "derivative_dk": 1e-5,
 
     "kmesh": {
       "type": "b1b2",
@@ -35,55 +72,69 @@
       "dk_frac": 0.00125
     },
 
-    "output_suffix": "100_b1b2_0.00125_v2",
-
-    "bzmesh": {
-      "type": "BZ",
-      "Nk": 200
+    "kpath": {
+      "type": "localK_MKKp",
+      "Nk_seg": 1000,
+      "frac_local": 0.10
     },
 
-    "temperatureList_K": {
-      "min": 6.5,
-      "max": 8.0,
-      "num": 1
+    "bandList": [4, 5, 6],
+    "output_suffix": "auto"
+  },
+
+  "calculate_berry_curvature": {
+    "model": "sk",
+    "mode": "kmesh",
+    "Dfield_eV": 0,
+    "derivative_dk": 1e-5,
+
+    "kmesh": {
+      "type": "b1b2",
+      "Nk": 50,
+      "dk_frac": 0.00125
     },
 
-    "muList_eV": {
-      "min": 0.60,
-      "max": 0.63,
-      "num": 31
-    }
+    "kpath": {
+      "type": "localK_MKKp",
+      "Nk_seg": 1000,
+      "frac_local": 0.10
+    },
+
+    "bandList": [4, 5, 6],
+    "output_suffix": "auto"
   },
 
   "calculate_chi": {
     "model": "sk",
     "boundary": "open",
-    "Dfield_eV": -0.012,
-    "eta": 1e-5,
+    "Dfield_eV": -0.01,
+    "eta": 1e-4,
 
     "iq": 4,
-    "jq": -4,
+    "jq": 0,
     "use_form_factor": true,
+    "diagonal_band_only": false,
 
     "polarList_meV": {
-      "min": 0.0,
-      "max": 0.0,
-      "num": 1
+      
+      "min": 1,
+      "max": 1,
+      "num": 1   
     },
 
     "temperatureList_K": {
-      "min": 6.5,
-      "max": 6.5,
-      "num": 1
+      "min": 6.4,
+      "max": 6.4,
+      "num": 1   
     },
 
     "muList_eV": {
-      "min": 0.5,
-      "max": 0.8,
-      "num": 1
+      "min": 0.500,
+      "max": 0.745,
+      "num": 246   
     },
 
-    "fermi_patch_path": "data/fermi_sk_mu_100_b1b2_0.00125/D-0.012",
-    "output_suffix": "_100_b1b2_0.00125"
+    "fermi_patch_path": "data/fermi_sk_mu_50_b1b2_0.00125_D-0.01_B1T_2026_5_23_11_50_50/D-0.010",
+    "output_suffix": "_4_0"
   }
 }

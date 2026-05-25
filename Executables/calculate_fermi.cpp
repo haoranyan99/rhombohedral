@@ -12,7 +12,6 @@
 #include <fstream>
 #include <cstdint>
 #include <cstring>
-#include <complex>
 
 #ifdef USE_MPI
   #include <mpi.h>
@@ -38,6 +37,73 @@ static std::pair<double, double> minmax_or_nan(const std::vector<double>& v)
 
     auto [mn_it, mx_it] = std::minmax_element(v.begin(), v.end());
     return {*mn_it, *mx_it};
+}
+
+static std::string compact_double_tag(double x)
+{
+    if (std::abs(x) < 5e-13) {
+        x = 0.0;
+    }
+
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(10) << x;
+
+    std::string s = oss.str();
+
+    while (!s.empty() && s.back() == '0') {
+        s.pop_back();
+    }
+
+    if (!s.empty() && s.back() == '.') {
+        s.pop_back();
+    }
+
+    if (s == "-0") {
+        s = "0";
+    }
+
+    return s;
+}
+
+static std::string auto_fermi_output_suffix(
+    const config::CalFermiConfig& cfg,
+    double B_T
+)
+{
+    std::ostringstream oss;
+
+    oss << cfg.kmesh.Nk
+        << "_"
+        << cfg.kmesh.type
+        << "_"
+        << compact_double_tag(cfg.kmesh.dk_frac)
+        << "_D"
+        << compact_double_tag(cfg.Dfield_eV);
+
+    if (std::abs(B_T) > 0.0) {
+        oss << "_B"
+            << compact_double_tag(B_T)
+            << "T";
+    }
+
+    return oss.str();
+}
+
+static std::string fermi_output_suffix(
+    const config::CalFermiConfig& cfg,
+    double B_T
+) {
+    std::string suffix =
+        auto_fermi_output_suffix(cfg, B_T);
+
+    if (
+        !cfg.output_suffix.empty()
+     && cfg.output_suffix != "auto"
+    ) {
+        suffix += "_" + cfg.output_suffix;
+    }
+
+    return suffix;
 }
 
 static core::GridData make_kmesh(
@@ -71,6 +137,65 @@ static core::GridData make_kmesh(
     );
 }
 
+static double patch_area_fraction(
+    const core::GridData& kpatch
+) {
+    if (kpatch.size() == 0) {
+        return 0.0;
+    }
+
+    const double frac =
+        static_cast<double>(kpatch.size())
+      * kpatch.dx
+      * kpatch.dy;
+
+    if (!std::isfinite(frac) || frac < 0.0) {
+        return 0.0;
+    }
+
+    return std::min(frac, 1.0);
+}
+
+static double patch_filling(
+    const core::GridData& fsgrid
+) {
+    fsgrid.assert_consistent();
+
+    const auto& occAvg =
+        fsgrid.get<double>("occ_k_avg").v;
+
+    if (occAvg.empty()) {
+        return 0.5;
+    }
+
+    double acc = 0.0;
+    int n = 0;
+
+    for (double x : occAvg) {
+        if (!std::isfinite(x)) {
+            continue;
+        }
+
+        acc += x;
+        ++n;
+    }
+
+    if (n == 0) {
+        return 0.5;
+    }
+
+    return acc / static_cast<double>(n);
+}
+
+static double total_filling_from_local_patch(
+    double filling_patch,
+    double area_fraction
+) {
+    return 0.5
+         + area_fraction
+         * (filling_patch - 0.5);
+}
+
 // ============================================================
 // Binary writer for fermi patch
 //
@@ -81,12 +206,14 @@ static core::GridData make_kmesh(
 // int32 dim
 // double EF
 // double T_K
-// double doping
-// double filling
+// double doping_total
+// double filling_total
 // double dx
 // double dy
 // char mesh_type[32]
-// int32 has_shear_projection        (version >= 4)
+// int32 spin_sign       (v5: +1 up, -1 down, 0 no spin split)
+// double doping_spin    (v5)
+// double filling_spin   (v5)
 //
 // Per k:
 // int32 iq
@@ -98,18 +225,17 @@ static core::GridData make_kmesh(
 // double occ_band[dim]
 // double evec_re[dim*dim]
 // double evec_im[dim*dim]
-// double shear_gx_re[dim*dim]       (if has_shear_projection)
-// double shear_gx_im[dim*dim]
-// double shear_gy_re[dim*dim]
-// double shear_gy_im[dim*dim]
 // ============================================================
 static void write_fermi_patch_bin(
     const std::string& out_path,
     const core::GridData& fsgrid,
     double EF,
     double T_K,
-    double doping,
-    double filling
+    double doping_total,
+    double filling_total,
+    int spin_sign,
+    double doping_spin,
+    double filling_spin
 ) {
     fsgrid.assert_consistent();
 
@@ -125,33 +251,15 @@ static void write_fermi_patch_bin(
     const auto& evecReF = fsgrid.get<std::vector<double>>("evec_re").v;
     const auto& evecImF = fsgrid.get<std::vector<double>>("evec_im").v;
 
-    const std::vector<std::vector<double>>* shearGxReF = nullptr;
-    const std::vector<std::vector<double>>* shearGxImF = nullptr;
-    const std::vector<std::vector<double>>* shearGyReF = nullptr;
-    const std::vector<std::vector<double>>* shearGyImF = nullptr;
-
-    try {
-        shearGxReF = &fsgrid.get<std::vector<double>>("shear_gx_re").v;
-        shearGxImF = &fsgrid.get<std::vector<double>>("shear_gx_im").v;
-        shearGyReF = &fsgrid.get<std::vector<double>>("shear_gy_re").v;
-        shearGyImF = &fsgrid.get<std::vector<double>>("shear_gy_im").v;
-    } catch (...) {
-        shearGxReF = nullptr;
-        shearGxImF = nullptr;
-        shearGyReF = nullptr;
-        shearGyImF = nullptr;
-    }
-
     if (fsgrid.size() == 0) {
         throw std::runtime_error("write_fermi_patch_bin: empty fsgrid");
     }
 
     const int32_t magic   = 20260510;
-    const int32_t version = 4;
+    const int32_t version = 5;
     const int32_t NkTot   = static_cast<int32_t>(fsgrid.size());
     const int32_t dim     = static_cast<int32_t>(evalsF[0].size());
-    const int32_t has_shear_projection =
-        (shearGxReF && shearGxImF && shearGyReF && shearGyImF) ? 1 : 0;
+    const int32_t spin_sign_i32 = static_cast<int32_t>(spin_sign);
 
     char mesh_type[32] = {};
     std::snprintf(
@@ -168,16 +276,15 @@ static void write_fermi_patch_bin(
 
     ofs.write(reinterpret_cast<const char*>(&EF),      sizeof(EF));
     ofs.write(reinterpret_cast<const char*>(&T_K),     sizeof(T_K));
-    ofs.write(reinterpret_cast<const char*>(&doping),  sizeof(doping));
-    ofs.write(reinterpret_cast<const char*>(&filling), sizeof(filling));
+    ofs.write(reinterpret_cast<const char*>(&doping_total),  sizeof(doping_total));
+    ofs.write(reinterpret_cast<const char*>(&filling_total), sizeof(filling_total));
 
     ofs.write(reinterpret_cast<const char*>(&fsgrid.dx), sizeof(fsgrid.dx));
     ofs.write(reinterpret_cast<const char*>(&fsgrid.dy), sizeof(fsgrid.dy));
     ofs.write(reinterpret_cast<const char*>(mesh_type), sizeof(mesh_type));
-    ofs.write(
-        reinterpret_cast<const char*>(&has_shear_projection),
-        sizeof(has_shear_projection)
-    );
+    ofs.write(reinterpret_cast<const char*>(&spin_sign_i32), sizeof(spin_sign_i32));
+    ofs.write(reinterpret_cast<const char*>(&doping_spin), sizeof(doping_spin));
+    ofs.write(reinterpret_cast<const char*>(&filling_spin), sizeof(filling_spin));
 
     for (size_t ik = 0; ik < fsgrid.size(); ++ik) {
         const int32_t iq = static_cast<int32_t>(fsgrid.iq[ik]);
@@ -223,137 +330,7 @@ static void write_fermi_patch_bin(
             sizeof(double) * dim * dim
         );
 
-        if (has_shear_projection) {
-            if ((int)(*shearGxReF)[ik].size() != dim * dim ||
-                (int)(*shearGxImF)[ik].size() != dim * dim ||
-                (int)(*shearGyReF)[ik].size() != dim * dim ||
-                (int)(*shearGyImF)[ik].size() != dim * dim)
-            {
-                throw std::runtime_error(
-                    "write_fermi_patch_bin: inconsistent shear projection size"
-                );
-            }
-
-            ofs.write(
-                reinterpret_cast<const char*>((*shearGxReF)[ik].data()),
-                sizeof(double) * dim * dim
-            );
-            ofs.write(
-                reinterpret_cast<const char*>((*shearGxImF)[ik].data()),
-                sizeof(double) * dim * dim
-            );
-            ofs.write(
-                reinterpret_cast<const char*>((*shearGyReF)[ik].data()),
-                sizeof(double) * dim * dim
-            );
-            ofs.write(
-                reinterpret_cast<const char*>((*shearGyImF)[ik].data()),
-                sizeof(double) * dim * dim
-            );
-        }
     }
-}
-
-static void attach_shear_projection_matrices(
-    core::GridData& fsgrid,
-    const rg::RG_SKModel& sk_model,
-    double delta_A
-) {
-    using cd = std::complex<double>;
-
-    fsgrid.assert_consistent();
-
-    if (!(delta_A > 0.0)) {
-        throw std::runtime_error("attach_shear_projection_matrices: delta_A must be > 0");
-    }
-
-    const auto& kvecF   = fsgrid.get<rg::Vec2>("kvec").v;
-    const auto& evalsF  = fsgrid.get<std::vector<double>>("evals").v;
-    const auto& evecReF = fsgrid.get<std::vector<double>>("evec_re").v;
-    const auto& evecImF = fsgrid.get<std::vector<double>>("evec_im").v;
-
-    if (fsgrid.size() == 0) {
-        throw std::runtime_error("attach_shear_projection_matrices: empty fsgrid");
-    }
-
-    const int dim = static_cast<int>(evalsF[0].size());
-    if (dim <= 0) {
-        throw std::runtime_error("attach_shear_projection_matrices: dim <= 0");
-    }
-
-    auto& gxReF = fsgrid.add<std::vector<double>>("shear_gx_re").v;
-    auto& gxImF = fsgrid.add<std::vector<double>>("shear_gx_im").v;
-    auto& gyReF = fsgrid.add<std::vector<double>>("shear_gy_re").v;
-    auto& gyImF = fsgrid.add<std::vector<double>>("shear_gy_im").v;
-
-    for (size_t ik = 0; ik < fsgrid.size(); ++ik) {
-        gxReF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
-        gxImF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
-        gyReF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
-        gyImF[ik].assign(static_cast<size_t>(dim) * static_cast<size_t>(dim), 0.0);
-    }
-
-    const auto hops_px =
-        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(delta_A, 0.0));
-    const auto hops_mx =
-        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(-delta_A, 0.0));
-    const auto hops_py =
-        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(0.0, delta_A));
-    const auto hops_my =
-        sk_model.generate_HmnRInt_list_with_shear(rg::Vec2(0.0, -delta_A));
-
-    const double inv_2delta = 1.0 / (2.0 * delta_A);
-
-    for (size_t ik = 0; ik < fsgrid.size(); ++ik) {
-        if ((int)evecReF[ik].size() != dim * dim ||
-            (int)evecImF[ik].size() != dim * dim)
-        {
-            throw std::runtime_error(
-                "attach_shear_projection_matrices: evec size mismatch"
-            );
-        }
-
-        Eigen::MatrixXcd U(dim, dim);
-        for (int a = 0; a < dim; ++a) {
-            for (int b = 0; b < dim; ++b) {
-                const size_t p =
-                    static_cast<size_t>(a) * static_cast<size_t>(dim)
-                  + static_cast<size_t>(b);
-
-                U(a, b) = cd(evecReF[ik][p], evecImF[ik][p]);
-            }
-        }
-
-        const Eigen::MatrixXcd Hpx =
-            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_px, true, false);
-        const Eigen::MatrixXcd Hmx =
-            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_mx, true, false);
-        const Eigen::MatrixXcd Hpy =
-            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_py, true, false);
-        const Eigen::MatrixXcd Hmy =
-            sk_model.build_Hk_from_hoppings(kvecF[ik], hops_my, true, false);
-
-        const Eigen::MatrixXcd Gx = (Hpx - Hmx) * inv_2delta;
-        const Eigen::MatrixXcd Gy = (Hpy - Hmy) * inv_2delta;
-
-        const Eigen::MatrixXcd Px = U.adjoint() * Gx * U;
-        const Eigen::MatrixXcd Py = U.adjoint() * Gy * U;
-
-        for (int b = 0; b < dim; ++b) {
-            for (int m = 0; m < dim; ++m) {
-                const size_t p =
-                    static_cast<size_t>(b) * static_cast<size_t>(dim)
-                  + static_cast<size_t>(m);
-
-                gxReF[ik][p] = Px(b, m).real();
-                gxImF[ik][p] = Px(b, m).imag();
-                gyReF[ik][p] = Py(b, m).real();
-                gyImF[ik][p] = Py(b, m).imag();
-            }
-        }
-    }
-
-    fsgrid.assert_consistent();
 }
 
 int main(int argc, char** argv)
@@ -390,11 +367,8 @@ int main(int argc, char** argv)
         core::GridData kpatch =
             make_kmesh(st, cfg.kmesh);
 
-        core::GridData bzpatch =
-            st.generate_BZ_kmesh(
-                cfg.bzmesh.Nk,
-                cfg.bzmesh.Nk
-            );
+        const double kmesh_area_fraction =
+            patch_area_fraction(kpatch);
 
         std::unique_ptr<rg::RG_ModelBase> model_ptr;
 
@@ -425,40 +399,27 @@ int main(int argc, char** argv)
             ? fs::path("data")
             : fs::path(cfg.data_dir);
 
-        const fs::path root_dir =
-            base_dir
-            / (
-                std::string("fermi_")
-              + cfg.model
-              + "_mu_"
-              + cfg.output_suffix
-            );
-
-        const fs::path D_dir =
-            root_dir
-            / (std::string("D") + rgio::tag3(cfg.Dfield_eV));
-
         const auto [Tmin, Tmax] =
             minmax_or_nan(cfg.temperature_list);
 
         const auto [mu_min, mu_max] =
             minmax_or_nan(cfg.mu_list);
 
-        if (rank == 0) {
-            fs::create_directories(D_dir);
+        const auto [B_min, B_max] =
+            minmax_or_nan(cfg.Bfield_list_T);
 
+        if (rank == 0) {
             std::cout << "=== calculate_fermi ===\n";
             std::cout << "config     = " << config_file << "\n";
             std::cout << "run_stamp  = " << run_stamp << "\n";
             std::cout << "data_dir   = " << base_dir.string() << "\n";
-            std::cout << "out_root   = " << D_dir.string() << "\n";
             std::cout << "model      = " << cfg.model << "\n";
             std::cout << "scan       = mu\n";
-            std::cout << "suffix     = " << cfg.output_suffix << "\n";
             std::cout << "layers     = " << para.layer_num << "\n";
             std::cout << "pressure   = " << para.pressure << "\n";
             std::cout << "Dfield     = " << cfg.Dfield_eV << "\n";
-            std::cout << "shear_delta_A = " << cfg.shear_delta_A << "\n";
+            std::cout << "g_factor   = " << cfg.g_factor << "\n";
+            std::cout << "orb_dk     = " << cfg.orbital_derivative_dk << "\n";
 
             std::cout << "kmesh      = " << cfg.kmesh.type
                       << " Nk=" << cfg.kmesh.Nk
@@ -467,11 +428,10 @@ int main(int argc, char** argv)
                       << " size=" << kpatch.size()
                       << "\n";
 
-            std::cout << "bzmesh     = " << cfg.bzmesh.type
-                      << " Nk=" << cfg.bzmesh.Nk
-                      << " mesh_type=" << bzpatch.mesh_type
-                      << " size=" << bzpatch.size()
-                      << "\n";
+            std::cout << "doping     = local-kmesh approximation\n";
+            std::cout << "kmesh_frac = " << std::setprecision(12)
+                      << kmesh_area_fraction
+                      << " (outside patch fixed at filling=0.5, doping=0)\n";
 
             std::cout << "MPI        = " << nprocs << " ranks\n";
 
@@ -482,116 +442,297 @@ int main(int argc, char** argv)
             std::cout << "scan mu    = count="
                       << cfg.mu_list.size()
                       << " in [" << mu_min << ", " << mu_max << "]\n";
+
+            std::cout << "scan B_T   = count="
+                      << cfg.Bfield_list_T.size()
+                      << " in [" << B_min << ", " << B_max << "]\n";
         }
 
         rgmpi::barrier();
 
-        for (double T_K : cfg.temperature_list) {
-            const fs::path T_dir =
-                D_dir / (std::string("T") + rgio::tag3(T_K));
+        for (double B_T : cfg.Bfield_list_T) {
+            const std::string output_suffix =
+                fermi_output_suffix(cfg, B_T);
+
+            const fs::path root_dir =
+                base_dir
+                / (
+                    std::string("fermi_")
+                  + cfg.model
+                  + "_mu_"
+                  + output_suffix
+                  + run_stamp
+                );
+
+            const fs::path D_dir =
+                root_dir
+                / (std::string("D") + rgio::tag3(cfg.Dfield_eV));
 
             if (rank == 0) {
-                fs::create_directories(T_dir);
-
-                std::cout << "\n[T="
-                          << std::fixed
-                          << std::setprecision(3)
-                          << T_K
-                          << "] "
-                          << T_dir.string()
+                fs::create_directories(D_dir);
+                std::cout << "\n[B="
+                          << compact_double_tag(B_T)
+                          << " T] suffix="
+                          << output_suffix
+                          << " out_root="
+                          << D_dir.string()
                           << "\n";
             }
 
             rgmpi::barrier();
 
-            for (double mu_raw : cfg.mu_list) {
-                double mu = mu_raw;
+            const bool use_magnetic_splitting =
+                std::abs(B_T) > 0.0;
 
-                if (std::abs(mu) < 5e-13) {
-                    mu = 0.0;
+            for (double T_K : cfg.temperature_list) {
+                const fs::path T_dir =
+                    D_dir / (std::string("T") + rgio::tag3(T_K));
+
+                if (rank == 0) {
+                    fs::create_directories(T_dir);
+
+                    std::cout << "\n[T="
+                              << std::fixed
+                              << std::setprecision(3)
+                              << T_K
+                              << "] "
+                              << T_dir.string()
+                              << "\n";
                 }
 
-                // ====================================================
-                // 1. Full BZ filling/doping
-                // ====================================================
-                const double filling_BZ =
-                    model.find_filling_from_EF(
-                        mu,
-                        T_K,
-                        bzpatch
-                    );
+                rgmpi::barrier();
 
-                const double doping_BZ =
-                    la::filling_to_doping(
-                        filling_BZ,
-                        st.a()
-                    );
+                for (double mu_raw : cfg.mu_list) {
+                    double mu = mu_raw;
 
-                // ====================================================
-                // 2. Local/truncated fermi patch with eigenvectors
-                // ====================================================
-                core::GridData fsgrid =
-                    model.cal_fermi_patch_from_mu(
-                        mu,
-                        T_K,
-                        kpatch
-                    );
+                    if (std::abs(mu) < 5e-13) {
+                        mu = 0.0;
+                    }
 
-                if (rank != 0) {
-                    continue;
+                    // ====================================================
+                    // 1. Local/truncated fermi patch with eigenvectors
+                    // ====================================================
+                    core::GridData fsgrid;
+                    core::GridData fsgrid_up;
+                    core::GridData fsgrid_dn;
+
+                    if (use_magnetic_splitting) {
+                        fsgrid_up =
+                            model.cal_fermi_patch_from_mu_magnetic(
+                                mu,
+                                T_K,
+                                kpatch,
+                                B_T,
+                                cfg.g_factor,
+                                cfg.orbital_derivative_dk,
+                                +1
+                            );
+
+                        fsgrid_dn =
+                            model.cal_fermi_patch_from_mu_magnetic(
+                                mu,
+                                T_K,
+                                kpatch,
+                                B_T,
+                                cfg.g_factor,
+                                cfg.orbital_derivative_dk,
+                                -1
+                            );
+                    } else {
+                        fsgrid =
+                            model.cal_fermi_patch_from_mu(
+                                mu,
+                                T_K,
+                                kpatch
+                            );
+                    }
+
+                    // ====================================================
+                    // 2. Approximate total filling/doping from local patch
+                    //    Outside the patch is fixed at half filling.
+                    // ====================================================
+                    double filling_patch = 0.5;
+                    double filling_up_patch = 0.5;
+                    double filling_dn_patch = 0.5;
+
+                    double filling_total = 0.5;
+                    double doping_total = 0.0;
+                    double filling_up_total = 0.5;
+                    double filling_dn_total = 0.5;
+                    double doping_up_total = 0.0;
+                    double doping_dn_total = 0.0;
+
+                    if (use_magnetic_splitting) {
+                        filling_up_patch =
+                            patch_filling(fsgrid_up);
+
+                        filling_dn_patch =
+                            patch_filling(fsgrid_dn);
+
+                        filling_up_total =
+                            total_filling_from_local_patch(
+                                filling_up_patch,
+                                kmesh_area_fraction
+                            );
+
+                        filling_dn_total =
+                            total_filling_from_local_patch(
+                                filling_dn_patch,
+                                kmesh_area_fraction
+                            );
+
+                        filling_total =
+                            0.5 * (filling_up_total + filling_dn_total);
+
+                        doping_up_total =
+                            la::filling_to_doping(
+                                filling_up_total,
+                                st.a()
+                            );
+
+                        doping_dn_total =
+                            la::filling_to_doping(
+                                filling_dn_total,
+                                st.a()
+                            );
+
+                        doping_total =
+                            la::filling_to_doping(
+                                filling_total,
+                                st.a()
+                            );
+                    } else {
+                        filling_patch =
+                            patch_filling(fsgrid);
+
+                        filling_total =
+                            total_filling_from_local_patch(
+                                filling_patch,
+                                kmesh_area_fraction
+                            );
+
+                        doping_total =
+                            la::filling_to_doping(
+                                filling_total,
+                                st.a()
+                            );
+                    }
+
+                    if (rank != 0) {
+                        continue;
+                    }
+
+                    const double EF_used = mu;
+
+                    std::cout << std::fixed
+                              << std::setprecision(6);
+
+                    std::cout << "[mu "
+                              << mu
+                              << "] EF="
+                              << std::setprecision(8)
+                              << EF_used
+                              << " filling_total="
+                              << std::setprecision(10)
+                              << filling_total
+                              << " doping_total="
+                              << std::setprecision(10)
+                              << doping_total
+                              << " filling_patch="
+                              << std::setprecision(10)
+                              << (
+                                     use_magnetic_splitting
+                                   ? 0.5 * (filling_up_patch + filling_dn_patch)
+                                   : filling_patch
+                                 );
+
+                    if (use_magnetic_splitting) {
+                        std::cout
+                                  << " filling_up="
+                                  << filling_up_total
+                                  << " filling_down="
+                                  << filling_dn_total
+                                  << " filling_up_patch="
+                                  << filling_up_patch
+                                  << " filling_down_patch="
+                                  << filling_dn_patch
+                                  << " doping_up="
+                                  << doping_up_total
+                                  << " doping_down="
+                                  << doping_dn_total;
+                    }
+
+                    std::cout << "\n";
+
+                    const std::string mu_tag =
+                        std::string("mu") + rgio::tag6(mu);
+
+                    const fs::path mu_dir =
+                        T_dir / mu_tag;
+                    fs::create_directories(mu_dir);
+
+                    if (use_magnetic_splitting) {
+                        const fs::path out_path_up =
+                            mu_dir
+                            / "fermi_spin_up_patch.bin";
+
+                        const fs::path out_path_dn =
+                            mu_dir
+                            / "fermi_spin_down_patch.bin";
+
+                        write_fermi_patch_bin(
+                            out_path_up.string(),
+                            fsgrid_up,
+                            EF_used,
+                            T_K,
+                            doping_total,
+                            filling_total,
+                            +1,
+                            doping_up_total,
+                            filling_up_total
+                        );
+
+                        write_fermi_patch_bin(
+                            out_path_dn.string(),
+                            fsgrid_dn,
+                            EF_used,
+                            T_K,
+                            doping_total,
+                            filling_total,
+                            -1,
+                            doping_dn_total,
+                            filling_dn_total
+                        );
+
+                        std::cout << "Wrote: "
+                                  << out_path_up.string()
+                                  << "\n";
+
+                        std::cout << "Wrote: "
+                                  << out_path_dn.string()
+                                  << "\n";
+                    } else {
+                        const fs::path out_path =
+                            mu_dir
+                            / "fermiPatch.bin";
+
+                        write_fermi_patch_bin(
+                            out_path.string(),
+                            fsgrid,
+                            EF_used,
+                            T_K,
+                            doping_total,
+                            filling_total,
+                            0,
+                            doping_total,
+                            filling_total
+                        );
+
+                        std::cout << "Wrote: "
+                                  << out_path.string()
+                                  << "\n";
+                    }
                 }
-
-                if (cfg.model == "sk") {
-                    auto* sk =
-                        dynamic_cast<rg::RG_SKModel*>(model_ptr.get());
-
-                    attach_shear_projection_matrices(
-                        fsgrid,
-                        *sk,
-                        cfg.shear_delta_A
-                    );
-                }
-
-                const double EF_used = mu;
-
-                std::cout << std::fixed
-                          << std::setprecision(6);
-
-                std::cout << "[mu "
-                          << mu
-                          << "] EF="
-                          << std::setprecision(8)
-                          << EF_used
-                          << " filling_BZ="
-                          << std::setprecision(10)
-                          << filling_BZ
-                          << " doping_BZ="
-                          << std::setprecision(10)
-                          << doping_BZ
-                          << "\n";
-
-                const fs::path mu_dir =
-                    T_dir
-                    / (std::string("mu") + rgio::tag6(mu));
-
-                fs::create_directories(mu_dir);
-
-                const fs::path out_path =
-                    mu_dir
-                    / (std::string("fermiPatch_") + run_stamp + ".bin");
-
-                write_fermi_patch_bin(
-                    out_path.string(),
-                    fsgrid,
-                    EF_used,
-                    T_K,
-                    doping_BZ,
-                    filling_BZ
-                );
-
-                std::cout << "Wrote: "
-                          << out_path.string()
-                          << "\n";
             }
         }
 

@@ -49,6 +49,18 @@ public:
         bool enforce_hermitian = true
     ) const;
 
+    std::vector<double> orbital_moment_muB_at_k(
+        const Vec2& k,
+        double derivative_dk,
+        bool enforce_hermitian = true
+    ) const;
+
+    std::vector<double> berry_curvature_A2_at_k(
+        const Vec2& k,
+        double derivative_dk,
+        bool enforce_hermitian = true
+    ) const;
+
     virtual Eigen::MatrixXd bands_along_path(
         const std::vector<Vec2>& klist,
         bool enforce_hermitian = true
@@ -91,10 +103,30 @@ public:
         const core::GridData& kpatch
     ) const;
 
+    virtual double find_filling_from_EF_magnetic(
+        double EF,
+        double T_K,
+        const core::GridData& kpatch,
+        double B_T,
+        double g_factor,
+        double derivative_dk,
+        int spin_sign
+    ) const;
+
     virtual core::GridData cal_fermi_patch_from_mu(
         double EF,
         double T_K,
         const core::GridData& kpatch
+    ) const;
+
+    virtual core::GridData cal_fermi_patch_from_mu_magnetic(
+        double EF,
+        double T_K,
+        const core::GridData& kpatch,
+        double B_T,
+        double g_factor,
+        double derivative_dk,
+        int spin_sign
     ) const;
 
     virtual core::GridData cal_chi_grid_Ef(
@@ -125,6 +157,25 @@ protected:
         int norb,
         int Nl,
         double D
+    );
+
+    std::vector<double> orbital_moment_muB_at_k_(
+        const Vec2& k,
+        const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd>& es,
+        double derivative_dk
+    ) const;
+
+    std::vector<double> berry_curvature_A2_at_k_(
+        const Vec2& k,
+        const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd>& es,
+        double derivative_dk
+    ) const;
+
+    static double magnetic_energy_shift_(
+        double m_orb_muB,
+        double B_T,
+        double g_factor,
+        int spin_sign
     );
 
     void write_info_common_(
@@ -180,6 +231,219 @@ inline Eigen::MatrixXcd hermitianize_(
     const Eigen::MatrixXcd& H
 ) {
     return 0.5 * (H + H.adjoint());
+}
+
+inline std::vector<double> RG_ModelBase::orbital_moment_muB_at_k_(
+    const Vec2& k,
+    const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd>& es,
+    double derivative_dk
+) const {
+    if (!(derivative_dk > 0.0)) {
+        rgmpi::abort_all("orbital_moment_muB_at_k_: derivative_dk must be > 0");
+    }
+
+    const int dim =
+        static_cast<int>(es.eigenvalues().size());
+
+    const Vec2 dkx(derivative_dk, 0.0);
+    const Vec2 dky(0.0, derivative_dk);
+
+    const Eigen::MatrixXcd dHdkx =
+        (
+            hermitianize_(build_Hk(k + dkx, true))
+          - hermitianize_(build_Hk(k - dkx, true))
+        ) / (2.0 * derivative_dk);
+
+    const Eigen::MatrixXcd dHdky =
+        (
+            hermitianize_(build_Hk(k + dky, true))
+          - hermitianize_(build_Hk(k - dky, true))
+        ) / (2.0 * derivative_dk);
+
+    const auto& ev =
+        es.eigenvalues();
+
+    const auto& U =
+        es.eigenvectors();
+
+    const Eigen::MatrixXcd Vx =
+        U.adjoint() * dHdkx * U;
+
+    const Eigen::MatrixXcd Vy =
+        U.adjoint() * dHdky * U;
+
+    std::vector<double> m_muB(
+        static_cast<size_t>(dim),
+        0.0
+    );
+
+    constexpr double degeneracy_tol = 1e-10;
+
+    for (int n = 0; n < dim; ++n) {
+        double acc = 0.0;
+
+        for (int m = 0; m < dim; ++m) {
+            if (m == n) {
+                continue;
+            }
+
+            const double denom =
+                ev(n) - ev(m);
+
+            if (std::abs(denom) < degeneracy_tol) {
+                continue;
+            }
+
+            acc +=
+                (Vx(n, m) * Vy(m, n)).imag()
+                / denom;
+        }
+
+        m_muB[static_cast<size_t>(n)] =
+            -la::orbital_moment_muB_prefactor * acc;
+    }
+
+    return m_muB;
+}
+
+inline std::vector<double> RG_ModelBase::berry_curvature_A2_at_k_(
+    const Vec2& k,
+    const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd>& es,
+    double derivative_dk
+) const {
+    if (!(derivative_dk > 0.0)) {
+        rgmpi::abort_all("berry_curvature_A2_at_k_: derivative_dk must be > 0");
+    }
+
+    const int dim =
+        static_cast<int>(es.eigenvalues().size());
+
+    const Vec2 dkx(derivative_dk, 0.0);
+    const Vec2 dky(0.0, derivative_dk);
+
+    const Eigen::MatrixXcd dHdkx =
+        (
+            hermitianize_(build_Hk(k + dkx, true))
+          - hermitianize_(build_Hk(k - dkx, true))
+        ) / (2.0 * derivative_dk);
+
+    const Eigen::MatrixXcd dHdky =
+        (
+            hermitianize_(build_Hk(k + dky, true))
+          - hermitianize_(build_Hk(k - dky, true))
+        ) / (2.0 * derivative_dk);
+
+    const auto& ev =
+        es.eigenvalues();
+
+    const auto& U =
+        es.eigenvectors();
+
+    const Eigen::MatrixXcd Vx =
+        U.adjoint() * dHdkx * U;
+
+    const Eigen::MatrixXcd Vy =
+        U.adjoint() * dHdky * U;
+
+    std::vector<double> omega_A2(
+        static_cast<size_t>(dim),
+        0.0
+    );
+
+    constexpr double degeneracy_tol = 1e-10;
+
+    for (int n = 0; n < dim; ++n) {
+        double acc = 0.0;
+
+        for (int m = 0; m < dim; ++m) {
+            if (m == n) {
+                continue;
+            }
+
+            const double denom =
+                ev(n) - ev(m);
+
+            if (std::abs(denom) < degeneracy_tol) {
+                continue;
+            }
+
+            acc +=
+                (Vx(n, m) * Vy(m, n)).imag()
+                / (denom * denom);
+        }
+
+        omega_A2[static_cast<size_t>(n)] =
+            -2.0 * acc;
+    }
+
+    return omega_A2;
+}
+
+inline double RG_ModelBase::magnetic_energy_shift_(
+    double m_orb_muB,
+    double B_T,
+    double g_factor,
+    int spin_sign
+) {
+    const int s =
+        (spin_sign >= 0) ? +1 : -1;
+
+    const double orbital_shift =
+        -m_orb_muB * la::muB_eV_per_T * B_T;
+
+    const double zeeman_shift =
+        -0.5 * static_cast<double>(s)
+        * g_factor
+        * la::muB_eV_per_T
+        * B_T;
+
+    return orbital_shift + zeeman_shift;
+}
+
+inline std::vector<double> RG_ModelBase::orbital_moment_muB_at_k(
+    const Vec2& k,
+    double derivative_dk,
+    bool enforce_hermitian
+) const {
+    Eigen::MatrixXcd Hk =
+        build_Hk(k, enforce_hermitian);
+
+    if (enforce_hermitian) {
+        Hk = hermitianize_(Hk);
+    }
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> es(Hk);
+
+    if (es.info() != Eigen::Success) {
+        rgmpi::abort_all(
+            "RG_ModelBase::orbital_moment_muB_at_k: eigensolver failed"
+        );
+    }
+
+    return orbital_moment_muB_at_k_(k, es, derivative_dk);
+}
+
+inline std::vector<double> RG_ModelBase::berry_curvature_A2_at_k(
+    const Vec2& k,
+    double derivative_dk,
+    bool enforce_hermitian
+) const {
+    Eigen::MatrixXcd Hk =
+        build_Hk(k, enforce_hermitian);
+
+    if (enforce_hermitian) {
+        Hk = hermitianize_(Hk);
+    }
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> es(Hk);
+
+    if (es.info() != Eigen::Success) {
+        rgmpi::abort_all(
+            "RG_ModelBase::berry_curvature_A2_at_k: eigensolver failed"
+        );
+    }
+
+    return berry_curvature_A2_at_k_(k, es, derivative_dk);
 }
 
 inline Eigen::VectorXd RG_ModelBase::bands_at_k(
@@ -562,6 +826,99 @@ inline double RG_ModelBase::find_filling_from_EF_T0(
 
     return
         static_cast<double>(count_sum)
+        / (
+            static_cast<double>(NkTot)
+          * static_cast<double>(dim)
+        );
+}
+
+inline double RG_ModelBase::find_filling_from_EF_magnetic(
+    double EF,
+    double T_K,
+    const core::GridData& kpatch,
+    double B_T,
+    double g_factor,
+    double derivative_dk,
+    int spin_sign
+) const {
+    kpatch.assert_consistent();
+
+    const size_t NkTot = kpatch.size();
+
+    if (NkTot == 0) {
+        rgmpi::abort_all("find_filling_from_EF_magnetic: empty kpatch");
+    }
+
+    if (!(T_K >= 0.0)) {
+        rgmpi::abort_all("find_filling_from_EF_magnetic: T_K must be >= 0");
+    }
+
+    int rank = 0;
+    int nprocs = 1;
+    rgmpi::rank_size(rank, nprocs);
+
+    const auto& kvec =
+        kpatch.get<Vec2>("kvec").v;
+
+    Eigen::MatrixXcd H0 =
+        hermitianize_(build_Hk(kvec[0], true));
+
+    const int dim =
+        static_cast<int>(H0.rows());
+
+    const auto [i0, i1] =
+        rgmpi::block_1d_int(
+            static_cast<int>(NkTot),
+            rank,
+            nprocs
+        );
+
+    double occ_local = 0.0;
+
+    for (int ii = i0; ii < i1; ++ii) {
+        const size_t ik =
+            static_cast<size_t>(ii);
+
+        Eigen::MatrixXcd Hk =
+            hermitianize_(build_Hk(kvec[ik], true));
+
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> es(Hk);
+
+        if (es.info() != Eigen::Success) {
+            rgmpi::abort_all(
+                "find_filling_from_EF_magnetic: eigensolver failed"
+            );
+        }
+
+        const auto m_muB =
+            orbital_moment_muB_at_k_(
+                kvec[ik],
+                es,
+                derivative_dk
+            );
+
+        const auto& ev =
+            es.eigenvalues();
+
+        for (int b = 0; b < dim; ++b) {
+            const double e_eff =
+                ev(b)
+              + magnetic_energy_shift_(
+                    m_muB[static_cast<size_t>(b)],
+                    B_T,
+                    g_factor,
+                    spin_sign
+                );
+
+            occ_local += la::fermi(e_eff, EF, T_K);
+        }
+    }
+
+    double occ_sum = 0.0;
+    rgmpi::allreduce_sum(occ_local, occ_sum);
+
+    return
+        occ_sum
         / (
             static_cast<double>(NkTot)
           * static_cast<double>(dim)
@@ -1073,6 +1430,265 @@ inline core::GridData RG_ModelBase::cal_fermi_patch_from_mu(
                     ik * static_cast<size_t>(dim)
                   + static_cast<size_t>(b)
                 ];
+        }
+
+        for (int a = 0; a < dim; ++a) {
+            for (int b = 0; b < dim; ++b) {
+                const size_t global_pos =
+                    ik * static_cast<size_t>(dim) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(a) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(b);
+
+                const size_t local_pos =
+                    static_cast<size_t>(a) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(b);
+
+                evecReF[ik][local_pos] =
+                    evecRe_all[global_pos];
+
+                evecImF[ik][local_pos] =
+                    evecIm_all[global_pos];
+            }
+        }
+    }
+
+    out.assert_consistent();
+    return out;
+}
+
+inline core::GridData RG_ModelBase::cal_fermi_patch_from_mu_magnetic(
+    double EF,
+    double T_K,
+    const core::GridData& kpatch,
+    double B_T,
+    double g_factor,
+    double derivative_dk,
+    int spin_sign
+) const {
+    kpatch.assert_consistent();
+
+    const size_t NkTot = kpatch.size();
+
+    if (NkTot == 0) {
+        rgmpi::abort_all("cal_fermi_patch_from_mu_magnetic: empty kpatch");
+    }
+
+    if (!(T_K >= 0.0)) {
+        rgmpi::abort_all("cal_fermi_patch_from_mu_magnetic: T_K must be >= 0");
+    }
+
+    if (!std::isfinite(EF)) {
+        rgmpi::abort_all("cal_fermi_patch_from_mu_magnetic: EF must be finite");
+    }
+
+    int rank = 0;
+    int nprocs = 1;
+    rgmpi::rank_size(rank, nprocs);
+
+    const auto& kvecP =
+        kpatch.get<Vec2>("kvec").v;
+
+    Eigen::MatrixXcd H0 =
+        hermitianize_(build_Hk(kvecP[0], true));
+
+    const int dim =
+        static_cast<int>(H0.rows());
+
+    if (H0.cols() != dim) {
+        rgmpi::abort_all(
+            "cal_fermi_patch_from_mu_magnetic: H(k) is not square"
+        );
+    }
+
+    core::GridData out;
+    out.resize(NkTot);
+
+    out.dx = kpatch.dx;
+    out.dy = kpatch.dy;
+    out.mesh_type = kpatch.mesh_type;
+
+    auto& kvecF =
+        out.add<Vec2>("kvec").v;
+
+    auto& EFfield =
+        out.add<double>("EF_used").v;
+
+    auto& occAvgF =
+        out.add<double>("occ_k_avg").v;
+
+    auto& evalsF =
+        out.add<std::vector<double>>("evals").v;
+
+    auto& occbF =
+        out.add<std::vector<double>>("occ_band").v;
+
+    auto& evecReF =
+        out.add<std::vector<double>>("evec_re").v;
+
+    auto& evecImF =
+        out.add<std::vector<double>>("evec_im").v;
+
+    auto& mOrbF =
+        out.add<std::vector<double>>("m_orb_muB").v;
+
+    const double NaN =
+        std::numeric_limits<double>::quiet_NaN();
+
+    for (size_t i = 0; i < NkTot; ++i) {
+        out.iq[i] = kpatch.iq[i];
+        out.jq[i] = kpatch.jq[i];
+
+        kvecF[i] = kvecP[i];
+
+        EFfield[i] = EF;
+        occAvgF[i] = NaN;
+
+        evalsF[i].assign(static_cast<size_t>(dim), NaN);
+        occbF[i].assign(static_cast<size_t>(dim), NaN);
+        mOrbF[i].assign(static_cast<size_t>(dim), NaN);
+
+        evecReF[i].assign(
+            static_cast<size_t>(dim) * static_cast<size_t>(dim),
+            NaN
+        );
+
+        evecImF[i].assign(
+            static_cast<size_t>(dim) * static_cast<size_t>(dim),
+            NaN
+        );
+    }
+
+    const auto [i0, i1] =
+        rgmpi::block_1d_int(
+            static_cast<int>(NkTot),
+            rank,
+            nprocs
+        );
+
+    std::vector<double> occ_all(NkTot, 0.0);
+
+    std::vector<double> evals_all(
+        NkTot * static_cast<size_t>(dim),
+        0.0
+    );
+
+    std::vector<double> occb_all(
+        NkTot * static_cast<size_t>(dim),
+        0.0
+    );
+
+    std::vector<double> mOrb_all(
+        NkTot * static_cast<size_t>(dim),
+        0.0
+    );
+
+    std::vector<double> evecRe_all(
+        NkTot
+      * static_cast<size_t>(dim)
+      * static_cast<size_t>(dim),
+        0.0
+    );
+
+    std::vector<double> evecIm_all(
+        NkTot
+      * static_cast<size_t>(dim)
+      * static_cast<size_t>(dim),
+        0.0
+    );
+
+    for (int ii = i0; ii < i1; ++ii) {
+        const size_t ik =
+            static_cast<size_t>(ii);
+
+        Eigen::MatrixXcd Hk =
+            hermitianize_(build_Hk(kvecP[ik], true));
+
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> es(Hk);
+
+        if (es.info() != Eigen::Success) {
+            rgmpi::abort_all(
+                "cal_fermi_patch_from_mu_magnetic: eigensolver failed"
+            );
+        }
+
+        const auto m_muB =
+            orbital_moment_muB_at_k_(
+                kvecP[ik],
+                es,
+                derivative_dk
+            );
+
+        const auto& ev =
+            es.eigenvalues();
+
+        const auto& U =
+            es.eigenvectors();
+
+        double occ_sum = 0.0;
+
+        for (int b = 0; b < dim; ++b) {
+            const double e_eff =
+                ev(b)
+              + magnetic_energy_shift_(
+                    m_muB[static_cast<size_t>(b)],
+                    B_T,
+                    g_factor,
+                    spin_sign
+                );
+
+            const double fb =
+                la::fermi(e_eff, EF, T_K);
+
+            occ_sum += fb;
+
+            const size_t pos =
+                ik * static_cast<size_t>(dim)
+              + static_cast<size_t>(b);
+
+            evals_all[pos] = e_eff;
+            occb_all[pos] = fb;
+            mOrb_all[pos] = m_muB[static_cast<size_t>(b)];
+        }
+
+        occ_all[ik] =
+            occ_sum / static_cast<double>(dim);
+
+        for (int a = 0; a < dim; ++a) {
+            for (int b = 0; b < dim; ++b) {
+                const size_t pos =
+                    ik * static_cast<size_t>(dim) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(a) * static_cast<size_t>(dim)
+                  + static_cast<size_t>(b);
+
+                evecRe_all[pos] = U(a, b).real();
+                evecIm_all[pos] = U(a, b).imag();
+            }
+        }
+    }
+
+    rgmpi::allreduce_sum_vector(occ_all);
+    rgmpi::allreduce_sum_vector(evals_all);
+    rgmpi::allreduce_sum_vector(occb_all);
+    rgmpi::allreduce_sum_vector(mOrb_all);
+    rgmpi::allreduce_sum_vector(evecRe_all);
+    rgmpi::allreduce_sum_vector(evecIm_all);
+
+    for (size_t ik = 0; ik < NkTot; ++ik) {
+        occAvgF[ik] = occ_all[ik];
+
+        for (int b = 0; b < dim; ++b) {
+            const size_t band_pos =
+                ik * static_cast<size_t>(dim)
+              + static_cast<size_t>(b);
+
+            evalsF[ik][static_cast<size_t>(b)] =
+                evals_all[band_pos];
+
+            occbF[ik][static_cast<size_t>(b)] =
+                occb_all[band_pos];
+
+            mOrbF[ik][static_cast<size_t>(b)] =
+                mOrb_all[band_pos];
         }
 
         for (int a = 0; a < dim; ++a) {

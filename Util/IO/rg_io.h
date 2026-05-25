@@ -360,81 +360,79 @@ inline std::string make_key(double D, double T, double x) {
 //     }
 // }
 
-// inline void write_dos_txt(const std::string& out_path,
-//                           const core::SeriesData& dosS,
-//                           const std::string& header = "")
-// {
-//     dosS.assert_consistent();
+inline void write_dos_txt(const std::string& out_path,
+                          const core::SeriesData& dosS,
+                          const std::string& header = "")
+{
+    dosS.assert_consistent();
 
-//     const auto& E   = dosS.x;
-//     const auto& dos = dosS.get<double>("dos").v;
+    const auto& E   = dosS.x;
+    const auto& dos = dosS.get<double>("dos").v;
 
-//     if (E.size() != dosS.size() || dos.size() != dosS.size())
-//         throw std::runtime_error("write_dos_txt: field size mismatch");
+    if (E.size() != dosS.size() || dos.size() != dosS.size()) {
+        throw std::runtime_error("write_dos_txt: field size mismatch");
+    }
 
-//     // optional filling column
-//     const double* fill_ptr = nullptr;
-//     try {
-//         const auto& fill = dosS.get<double>("filling").v;
-//         if (fill.size() != dosS.size())
-//             throw std::runtime_error("write_dos_txt: filling field size mismatch");
-//         fill_ptr = fill.data();
-//     } catch (...) {
-//         fill_ptr = nullptr;
-//     }
+    const double* fill_ptr = nullptr;
+    try {
+        const auto& fill = dosS.get<double>("filling").v;
+        if (fill.size() != dosS.size()) {
+            throw std::runtime_error("write_dos_txt: filling field size mismatch");
+        }
+        fill_ptr = fill.data();
+    } catch (...) {
+        fill_ptr = nullptr;
+    }
 
-//     // optional doping column
-//     const double* dop_ptr = nullptr;
-//     try {
-//         const auto& dop = dosS.get<double>("doping").v;
-//         if (dop.size() != dosS.size())
-//             throw std::runtime_error("write_dos_txt: doping field size mismatch");
-//         dop_ptr = dop.data();
-//     } catch (...) {
-//         dop_ptr = nullptr;
-//     }
+    const double* dop_ptr = nullptr;
+    try {
+        const auto& dop = dosS.get<double>("doping").v;
+        if (dop.size() != dosS.size()) {
+            throw std::runtime_error("write_dos_txt: doping field size mismatch");
+        }
+        dop_ptr = dop.data();
+    } catch (...) {
+        dop_ptr = nullptr;
+    }
 
-//     std::ofstream fout(out_path);
-//     if (!fout)
-//         throw std::runtime_error("write_dos_txt: cannot write: " + out_path);
+    std::ofstream fout(out_path);
+    if (!fout) {
+        throw std::runtime_error("write_dos_txt: cannot write: " + out_path);
+    }
 
-//     fout << std::setprecision(15);
+    fout << std::setprecision(15);
 
-//     // -------- header (multi-line, ensure '#') --------
-//     if (!header.empty()) {
-//         std::istringstream iss(header);
-//         std::string line;
-//         while (std::getline(iss, line)) {
-//             if (line.empty()) continue;
-//             if (line[0] == '#') fout << line << "\n";
-//             else                fout << "# " << line << "\n";
-//         }
-//     }
+    if (!header.empty()) {
+        std::istringstream iss(header);
+        std::string line;
+        while (std::getline(iss, line)) {
+            if (line.empty()) continue;
+            if (line[0] == '#') fout << line << "\n";
+            else                fout << "# " << line << "\n";
+        }
+    }
 
-//     // -------- fixed writer header --------
-//     fout << "# RG DOS data\n";
+    fout << "# RG DOS data\n";
 
-//     // columns (auto-adapt)
-//     if (fill_ptr && dop_ptr) {
-//         fout << "# columns: i E(eV) filling doping_1e12cm^-2 DOS\n";
-//     } else if (fill_ptr && !dop_ptr) {
-//         fout << "# columns: i E(eV) filling DOS\n";
-//     } else if (!fill_ptr && dop_ptr) {
-//         fout << "# columns: i E(eV) doping_1e12cm^-2 DOS\n";
-//     } else {
-//         fout << "# columns: i E(eV) DOS\n";
-//     }
+    if (fill_ptr && dop_ptr) {
+        fout << "# columns: i E(eV) filling doping_1e12cm^-2 DOS\n";
+    } else if (fill_ptr && !dop_ptr) {
+        fout << "# columns: i E(eV) filling DOS\n";
+    } else if (!fill_ptr && dop_ptr) {
+        fout << "# columns: i E(eV) doping_1e12cm^-2 DOS\n";
+    } else {
+        fout << "# columns: i E(eV) DOS\n";
+    }
 
-//     fout << "# dE = " << dosS.dx << "\n";
+    fout << "# dE = " << dosS.dx << "\n";
 
-//     // -------- data --------
-//     for (size_t i = 0; i < dosS.size(); ++i) {
-//         fout << i << " " << E[i] << " ";
-//         if (fill_ptr) fout << fill_ptr[i] << " ";
-//         if (dop_ptr)  fout << dop_ptr[i]  << " ";
-//         fout << dos[i] << "\n";
-//     }
-// }
+    for (size_t i = 0; i < dosS.size(); ++i) {
+        fout << i << " " << E[i] << " ";
+        if (fill_ptr) fout << fill_ptr[i] << " ";
+        if (dop_ptr)  fout << dop_ptr[i]  << " ";
+        fout << dos[i] << "\n";
+    }
+}
 
 // inline void write_chi_txt(const std::string& out_path,
 //                           const core::GridData& qgrid,

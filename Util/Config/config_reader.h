@@ -101,14 +101,15 @@ struct DOSCfg {
     double eta    = 0.001;
 };
 
-struct TestDOSConfig {
+struct CalDOSConfig {
     std::string data_dir  = "data";
     std::string para_file = "Source/Parameters/RG_para.json";
 
     std::string model = "sk";
     double T_K = 0.0;
 
-    std::vector<double> DfieldList_meV;
+    std::string output_suffix = "0";
+    std::vector<double> Dfield_list_eV;
 
     MeshCfg kmesh;
     DOSCfg dos;
@@ -121,14 +122,40 @@ struct CalFermiConfig {
     std::string para_file = "Source/Parameters/RG_para.json";
 
     double Dfield_eV = 0.0;
-    double shear_delta_A = 1.0e-3;
+    double g_factor = 2.0;
+    double orbital_derivative_dk = 1e-5;
+    std::vector<double> Bfield_list_T;
 
     MeshCfg kmesh;   // local / truncated output patch
-    MeshCfg bzmesh;  // full BZ mesh for global filling/doping
 
     std::vector<double> temperature_list;
     std::vector<double> mu_list;
 };
+
+struct CalOrbitalMomentConfig {
+    std::string model = "sk";
+    std::string data_dir  = "data";
+    std::string output_suffix = "auto";
+    std::string para_file = "Source/Parameters/RG_para.json";
+
+    double Dfield_eV = 0.0;
+    double derivative_dk = 1e-5;
+
+    MeshCfg kmesh;
+    std::string mode = "auto";
+    bool use_kpath = false;
+    std::string kpath_type = "localK_MKKp";
+    int kpath_Nk_seg = 200;
+    double kpath_frac_local = 0.20;
+    std::vector<int> band_list;
+};
+
+using CalBerryCurvatureConfig = CalOrbitalMomentConfig;
+
+inline CalOrbitalMomentConfig read_cal_orbital_moment_like_config(
+    const std::string& config_file,
+    const std::string& task_name
+);
 
 struct CalChiConfig {
     std::string data_dir = "data";
@@ -147,6 +174,7 @@ struct CalChiConfig {
     int jq = 0;
 
     bool use_form_factor = true;
+    bool diagonal_band_only = false;
 
     std::vector<double> temperature_list;
     std::vector<double> polar_list; // stored in eV
@@ -367,7 +395,7 @@ inline TestBarebandConfig read_test_bareband_config(
     return c;
 }
 
-inline TestDOSConfig read_test_dos_config(
+inline CalDOSConfig read_cal_dos_config(
     const std::string& config_file
 ) {
     std::ifstream fin(config_file);
@@ -381,7 +409,7 @@ inline TestDOSConfig read_test_dos_config(
     json j;
     fin >> j;
 
-    TestDOSConfig c;
+    CalDOSConfig c;
 
     read_io_common(
         j,
@@ -390,7 +418,7 @@ inline TestDOSConfig read_test_dos_config(
     );
 
     const auto& task =
-        j.at("test_dos");
+        j.at("calculate_dos");
 
     if (task.contains("model")) {
         c.model =
@@ -400,6 +428,11 @@ inline TestDOSConfig read_test_dos_config(
     if (task.contains("T_K")) {
         c.T_K =
             task.at("T_K").get<double>();
+    }
+
+    if (task.contains("output_suffix")) {
+        c.output_suffix =
+            task.at("output_suffix").get<std::string>();
     }
 
     if (task.contains("kmesh")) {
@@ -435,7 +468,7 @@ inline TestDOSConfig read_test_dos_config(
     }
 
     const auto& Dlist =
-        task.at("DfieldList_meVnm^-1");
+        task.at("DfieldList_eV");
 
     const double Dmin =
         Dlist.at("min").get<double>();
@@ -448,17 +481,17 @@ inline TestDOSConfig read_test_dos_config(
 
     if (nD < 1) {
         throw std::runtime_error(
-            "DfieldList_meVnm^-1.num must be >= 1"
+            "DfieldList_eV.num must be >= 1"
         );
     }
 
     if (Dmax < Dmin) {
         throw std::runtime_error(
-            "DfieldList_meVnm^-1.max must be >= min"
+            "DfieldList_eV.max must be >= min"
         );
     }
 
-    c.DfieldList_meV =
+    c.Dfield_list_eV =
         la::linspace(Dmin, Dmax, nD);
 
     return c;
@@ -499,9 +532,43 @@ inline CalFermiConfig read_cal_fermi_config(
             task.at("Dfield_eV").get<double>();
     }
 
-    if (task.contains("shear_delta_A")) {
-        c.shear_delta_A =
-            task.at("shear_delta_A").get<double>();
+    if (task.contains("BfieldList_T")) {
+        c.Bfield_list_T =
+            read_range(task.at("BfieldList_T"));
+    }
+
+    if (task.contains("g_factor")) {
+        c.g_factor =
+            task.at("g_factor").get<double>();
+    }
+
+    if (task.contains("orbital_derivative_dk")) {
+        c.orbital_derivative_dk =
+            task.at("orbital_derivative_dk").get<double>();
+    }
+
+    if (task.contains("magnetic_field")) {
+        const auto& mf = task.at("magnetic_field");
+
+        if (mf.contains("BList_T")) {
+            c.Bfield_list_T =
+                read_range(mf.at("BList_T"));
+        }
+
+        if (mf.contains("BfieldList_T")) {
+            c.Bfield_list_T =
+                read_range(mf.at("BfieldList_T"));
+        }
+
+        if (mf.contains("g_factor")) {
+            c.g_factor =
+                mf.at("g_factor").get<double>();
+        }
+
+        if (mf.contains("orbital_derivative_dk")) {
+            c.orbital_derivative_dk =
+                mf.at("orbital_derivative_dk").get<double>();
+        }
     }
 
     if (task.contains("output_suffix")) {
@@ -516,22 +583,148 @@ inline CalFermiConfig read_cal_fermi_config(
         );
     }
 
-    if (task.contains("bzmesh")) {
-        read_mesh_cfg(
-            task.at("bzmesh"),
-            c.bzmesh
-        );
-    } else {
-        c.bzmesh.type = "BZ";
-        c.bzmesh.Nk = c.kmesh.Nk;
-        c.bzmesh.dk_frac = 0.0;
-    }
-
     c.temperature_list =
         read_range(task.at("temperatureList_K"));
 
     c.mu_list =
         read_range(task.at("muList_eV"));
+
+    if (c.Bfield_list_T.empty()) {
+        c.Bfield_list_T.push_back(0.0);
+    }
+
+    return c;
+}
+
+inline CalOrbitalMomentConfig read_cal_orbital_moment_config(
+    const std::string& config_file
+) {
+    return read_cal_orbital_moment_like_config(
+        config_file,
+        "calculate_orbital_moment"
+    );
+}
+
+inline CalBerryCurvatureConfig read_cal_berry_curvature_config(
+    const std::string& config_file
+) {
+    return read_cal_orbital_moment_like_config(
+        config_file,
+        "calculate_berry_curvature"
+    );
+}
+
+inline CalOrbitalMomentConfig read_cal_orbital_moment_like_config(
+    const std::string& config_file,
+    const std::string& task_name
+) {
+    std::ifstream fin(config_file);
+
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
+
+    json j;
+    fin >> j;
+
+    CalOrbitalMomentConfig c;
+
+    read_io_common(
+        j,
+        c.data_dir,
+        c.para_file
+    );
+
+    const auto& task =
+        j.at(task_name);
+
+    if (task.contains("model")) {
+        c.model =
+            task.at("model").get<std::string>();
+    }
+
+    if (task.contains("Dfield_eV")) {
+        c.Dfield_eV =
+            task.at("Dfield_eV").get<double>();
+    }
+
+    if (task.contains("derivative_dk")) {
+        c.derivative_dk =
+            task.at("derivative_dk").get<double>();
+    }
+
+    if (task.contains("orbital_derivative_dk")) {
+        c.derivative_dk =
+            task.at("orbital_derivative_dk").get<double>();
+    }
+
+    if (task.contains("output_suffix")) {
+        c.output_suffix =
+            task.at("output_suffix").get<std::string>();
+    }
+
+    if (task.contains("mode")) {
+        c.mode =
+            task.at("mode").get<std::string>();
+    }
+
+    if (task.contains("k_mode")) {
+        c.mode =
+            task.at("k_mode").get<std::string>();
+    }
+
+    if (task.contains("kmesh")) {
+        read_mesh_cfg(
+            task.at("kmesh"),
+            c.kmesh
+        );
+    }
+
+    if (task.contains("kpath")) {
+        const auto& kp =
+            task.at("kpath");
+
+        c.use_kpath = true;
+
+        if (kp.contains("type")) {
+            c.kpath_type =
+                kp.at("type").get<std::string>();
+        }
+
+        if (kp.contains("Nk_seg")) {
+            c.kpath_Nk_seg =
+                kp.at("Nk_seg").get<int>();
+        }
+
+        if (kp.contains("frac_local")) {
+            c.kpath_frac_local =
+                kp.at("frac_local").get<double>();
+        }
+    }
+
+    if (c.mode == "kpath" || c.mode == "path") {
+        c.use_kpath = true;
+    } else if (c.mode == "kmesh" || c.mode == "mesh") {
+        c.use_kpath = false;
+    } else if (c.mode == "auto") {
+        // Legacy behavior: if kpath exists, use it.
+    } else {
+        throw std::runtime_error(
+            task_name + ".mode must be kmesh, kpath, or auto"
+        );
+    }
+
+    if (task.contains("bandList")) {
+        c.band_list =
+            task.at("bandList").get<std::vector<int>>();
+    }
+
+    if (task.contains("band_list")) {
+        c.band_list =
+            task.at("band_list").get<std::vector<int>>();
+    }
 
     return c;
 }
@@ -587,6 +780,12 @@ inline CalChiConfig read_cal_chi_config(
 
     cfg.use_form_factor =
         c.value("use_form_factor", cfg.use_form_factor);
+
+    cfg.diagonal_band_only =
+        c.value("diagonal_band_only", cfg.diagonal_band_only);
+
+    cfg.diagonal_band_only =
+        c.value("diagonal_overlap_only", cfg.diagonal_band_only);
 
     cfg.polar_list =
         read_range(c.at("polarList_meV"));

@@ -1,53 +1,119 @@
 # ============================================================
-# Win / Linux — Serial (no MPI) — g++
+# Common include flags
 # ============================================================
+
+# Shared include set used by the commands below:
+#   -I.
+#   -I./include
+#   -I./include/eigen-3.4.0
+#   -I./Common
+#   -I./PhysStruct
+#   -I./Source
+#   -I./MeasureEngines
+#   -I./Util
+
+
+# ============================================================
+# Serial builds (g++, no MPI)
+# ============================================================
+
+# calculate_fermi
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_fermi.cpp \
+  -o calculate_fermi
+
+# calculate_chi
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_chi.cpp \
+  -o calculate_chi
 
 # test_Structure_and_KPath
 g++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
   Test/test_Structure_and_KPath.cpp \
   -o test_Structure_and_KPath
 
-# test_dos
+# calculate_dos
 g++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_dos.cpp \
-  -o test_dos
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_dos.cpp \
+  -o calculate_dos
+
+# calculate_orbital_moment
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_orbital_moment.cpp \
+  -o calculate_orbital_moment
+
+# calculate_berry_curvature
+g++ -std=c++17 -O2 -DNDEBUG \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_berry_curvature.cpp \
+  -o calculate_berry_curvature
 
 # test_bareband
 g++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
   Test/test_bareband.cpp \
   -o test_bareband
 
 
 # ============================================================
-# Win / Linux — MPI Parallel — mpicxx
+# MPI builds (mpicxx)
 # ============================================================
 
-
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_dos.cpp \
-  -o test_dos
-
-# calculate_chi (MPI)
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Executables/calculate_chi.cpp \
-  -o calculate_chi
-
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Executables/calculate_fermi.cpp \
-  -o calculate_fermi
-
+# calculate_fermi (MPI)
 mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
   -I. \
   -I./include \
@@ -57,74 +123,74 @@ mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
   -I./Source \
   -I./MeasureEngines \
   -I./Util \
-  Executables/calculate_chi_v2.cpp \
-  -o calculate_chi_v2
-
-
-mpiexec -np 4 ./test_dos config.json
-
-mpiexec -np 4 ./test_RG_fermi_patch config.json
-mpiexec -n 4 ./calculate_fermi config.json
-
-mpiexec -np 4 ./calculate_chi config.json
-mpiexec -n 4 ./calculate_chi_v2.exe config.json
-
-# ============================================================
-# macOS — Serial (no MPI) — clang++
-# ============================================================
-
-# test_Structure_and_KPath
-clang++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_Structure_and_KPath.cpp \
-  -o test_Structure_and_KPath
-
-# test_bareband
-clang++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_bareband.cpp \
-  -o test_bareband
-
-# calculate_chi (serial)
-clang++ -std=c++17 -O2 -DNDEBUG \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Executables/calculate_chi.cpp \
-  -o calculate_chi
-
-
-
-
-# ============================================================
-# macOS — MPI Parallel — mpicxx
-# ============================================================
-
-# test_find_EF_mpi
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_find_EF_mpi.cpp \
-  -o test_find_EF_mpi
-
-# calculate_chi (MPI)
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Executables/calculate_chi.cpp \
-  -o calculate_chi
-
-# calculate_fermi (MPI)
-mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
   Executables/calculate_fermi.cpp \
   -o calculate_fermi
 
-# calculate_fermi (MPI)
+# calculate_chi (MPI)
 mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
-  -I. -I./include -I./include/eigen-3.4.0 \
-  -I./Common -I./PhysStruct -I./Source \
-  Test/test_dos.cpp \
-  -o test_dos
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_chi.cpp \
+  -o calculate_chi
+
+# calculate_dos (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_dos.cpp \
+  -o calculate_dos
+
+# calculate_orbital_moment (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_orbital_moment.cpp \
+  -o calculate_orbital_moment
+
+# calculate_berry_curvature (MPI)
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_berry_curvature.cpp \
+  -o calculate_berry_curvature
+
+
+# ============================================================
+# Example runs
+# ============================================================
+
+./calculate_fermi config.json
+./calculate_dos config.json
+./calculate_orbital_moment config.json
+./calculate_berry_curvature config.json
+./calculate_chi config.json
+
+mpiexec -n 4 ./calculate_fermi config.json
+mpiexec -n 4 ./calculate_dos config.json
+mpiexec -n 4 ./calculate_orbital_moment config.json
+mpiexec -n 4 ./calculate_berry_curvature config.json
+mpiexec -n 4 ./calculate_chi config.json
