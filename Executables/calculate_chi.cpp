@@ -55,7 +55,8 @@ inline std::vector<std::string> list_fermiPatch_bins_in_dir(const fs::path& dir)
 
         const bool is_patch =
             fname.rfind("fermiPatch", 0) == 0
-         || fname.rfind("fermi_spin", 0) == 0;
+         || fname.rfind("fermi_spin", 0) == 0
+         || fname.rfind("fermi_valley", 0) == 0;
 
         if (!is_patch) continue;
 
@@ -70,6 +71,41 @@ inline std::string make_mu_tag(double mu)
 {
     if (std::abs(mu) < 5e-13) mu = 0.0;
     return std::string("mu") + rgio::tag6(mu);
+}
+
+inline fs::path resolve_mu_source_dir(
+    const fs::path& fermi_root,
+    double Dfield_eV,
+    double T_K,
+    double mu
+) {
+    const fs::path T_mu =
+        fermi_root
+        / (std::string("T") + rgio::tag3(T_K))
+        / make_mu_tag(mu);
+
+    if (fs::is_directory(T_mu)) {
+        return T_mu;
+    }
+
+    const fs::path D_T_mu =
+        fermi_root
+        / (std::string("D") + rgio::tag3(Dfield_eV))
+        / (std::string("T") + rgio::tag3(T_K))
+        / make_mu_tag(mu);
+
+    if (fs::is_directory(D_T_mu)) {
+        return D_T_mu;
+    }
+
+    const fs::path old_mu =
+        fermi_root / make_mu_tag(mu);
+
+    if (fs::is_directory(old_mu)) {
+        return old_mu;
+    }
+
+    return T_mu;
 }
 
 inline std::string compact_double_tag(double x)
@@ -96,6 +132,32 @@ inline std::string compact_double_tag(double x)
     }
 
     return s;
+}
+
+inline std::string infer_B_tag_from_fermi_path(
+    const std::string& fermi_patch_path
+) {
+    fs::path p(fermi_patch_path);
+
+    while (!p.empty()) {
+        const std::string name = p.filename().string();
+
+        if (name.size() >= 3 && name.front() == 'B' && name.back() == 'T') {
+            return name;
+        }
+
+        if (!p.has_parent_path()) {
+            break;
+        }
+
+        const fs::path parent = p.parent_path();
+        if (parent == p) {
+            break;
+        }
+        p = parent;
+    }
+
+    return "Bunknown";
 }
 
 inline bool looks_like_timestamp_token(const std::string& token)
@@ -138,9 +200,8 @@ inline std::string strip_trailing_timestamp(const std::string& s)
     return out;
 }
 
-inline std::string infer_fermi_suffix_from_path(
-    const std::string& fermi_patch_path,
-    const std::string& model
+inline std::string infer_fermi_dataset_name_from_path(
+    const std::string& fermi_patch_path
 ) {
     fs::path p(fermi_patch_path);
 
@@ -148,29 +209,31 @@ inline std::string infer_fermi_suffix_from_path(
         p = p.parent_path();
     }
 
-    std::string name = p.filename().string();
+    const std::string name = p.filename().string();
 
-    const std::string prefix =
-        std::string("fermi_") + model + "_mu_";
-
-    if (name.rfind(prefix, 0) == 0) {
-        name = name.substr(prefix.size());
-    }
-
-    name = strip_trailing_timestamp(name);
-
-    return name.empty() ? "unknownFermi" : name;
+    return name.empty() ? "fermi_unknown" : name;
 }
 
-inline std::string auto_chi_output_suffix(const config::CalChiConfig& cfg)
+inline std::string infer_chi_dataset_name_from_path(
+    const std::string& fermi_patch_path
+) {
+    std::string name =
+        infer_fermi_dataset_name_from_path(fermi_patch_path);
+
+    if (name.rfind("fermi_", 0) == 0) {
+        name.replace(0, 5, "chi");
+    } else {
+        name = std::string("chi_") + name;
+    }
+
+    return name;
+}
+
+inline std::string auto_chi_parameter_suffix(const config::CalChiConfig& cfg)
 {
     std::ostringstream oss;
 
-    oss << infer_fermi_suffix_from_path(
-            cfg.fermi_patch_path,
-            cfg.model
-        )
-        << "_q"
+    oss << "q"
         << cfg.iq
         << "_"
         << cfg.jq
@@ -188,7 +251,7 @@ inline std::string auto_chi_output_suffix(const config::CalChiConfig& cfg)
 inline std::string chi_output_suffix(const config::CalChiConfig& cfg)
 {
     std::string suffix =
-        auto_chi_output_suffix(cfg);
+        auto_chi_parameter_suffix(cfg);
 
     if (
         !cfg.output_suffix.empty()
@@ -198,6 +261,151 @@ inline std::string chi_output_suffix(const config::CalChiConfig& cfg)
     }
 
     return suffix;
+}
+
+inline std::string patch_label_from_path(const std::string& fermi_bin)
+{
+    std::string name =
+        fs::path(fermi_bin).stem().string();
+
+    const std::string prefix = "fermi_";
+    if (name.rfind(prefix, 0) == 0) {
+        name = name.substr(prefix.size());
+    }
+
+    const std::string suffix = "_patch";
+    if (
+        name.size() >= suffix.size()
+     && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0
+    ) {
+        name.erase(name.size() - suffix.size());
+    }
+
+    if (name == "fermiPatch") {
+        name = "average";
+    }
+
+    return name;
+}
+
+inline void write_chi_txt_file(
+    const fs::path& out_path,
+    const config::CalChiConfig& cfg,
+    const rgio::cal_chi_param& param,
+    const rgio::cal_chi_result& res,
+    const std::vector<std::string>& fermi_bins,
+    const std::vector<rgio::cal_chi_param>& patch_params,
+    const std::string& branch_label
+) {
+    const core::GridData& qgrid = res.qgrid;
+
+    std::ofstream ofs(out_path.string());
+
+    if (!ofs) {
+        throw std::runtime_error(
+            "Cannot open output chi file: " + out_path.string()
+        );
+    }
+
+    ofs << std::setprecision(15);
+
+    ofs << "# --- calculate_chi ---\n";
+    ofs << "# model = " << cfg.model << "\n";
+    ofs << "# input_format = bin\n";
+    ofs << "# branch_label = " << branch_label << "\n";
+    ofs << "# boundary = " << cfg.boundary << "\n";
+    ofs << "# Dfield_eV = " << cfg.Dfield_eV << "\n";
+    ofs << "# polar_mu_eV = 0\n";
+    ofs << "# polar_source = disabled_actual_B_from_fermi_patches\n";
+    ofs << "# T_K = " << param.T_K << "\n";
+    ofs << "# EF = " << param.Ef << "\n";
+    ofs << "# doping = " << res.doping << "\n";
+    ofs << "# filling = " << res.filling << "\n";
+    ofs << "# eta = " << cfg.eta << "\n";
+    ofs << "# use_form_factor = "
+        << (cfg.use_form_factor ? "true" : "false")
+        << "\n";
+    ofs << "# diagonal_band_only = "
+        << (cfg.diagonal_band_only ? "true" : "false")
+        << "\n";
+    ofs << "# band_scattering = "
+        << (cfg.diagonal_band_only ? "diagonal" : "all")
+        << "\n";
+    ofs << "# form_factor_kind = "
+        << (cfg.use_form_factor ? "density_overlap" : "none")
+        << "\n";
+    ofs << "# iq = " << cfg.iq << "\n";
+    ofs << "# jq = " << cfg.jq << "\n";
+    ofs << "# q_unit = iq * dx * b1 + jq * dy * b2\n";
+    ofs << "# normalization = sum_k * area_density\n";
+    ofs << "# fermiPatch_count = " << fermi_bins.size() << "\n";
+    ofs << "# fermiPatch_average = "
+        << ((fermi_bins.size() > 1) ? "arithmetic_mean" : "none")
+        << "\n";
+
+    for (size_t ibin = 0; ibin < fermi_bins.size(); ++ibin) {
+        ofs << "# fermiPatch_bin_" << ibin
+            << " = " << fermi_bins[ibin] << "\n";
+
+        if (
+            ibin < patch_params.size()
+         && patch_params[ibin].has_spin_metadata
+        ) {
+            ofs << "# fermiPatch_spin_sign_" << ibin
+                << " = " << patch_params[ibin].spin_sign << "\n";
+            ofs << "# fermiPatch_doping_spin_" << ibin
+                << " = " << patch_params[ibin].doping_spin << "\n";
+            ofs << "# fermiPatch_filling_spin_" << ibin
+                << " = " << patch_params[ibin].filling_spin << "\n";
+        }
+    }
+
+    if (qgrid.dx > 0.0 && qgrid.dy > 0.0) {
+        ofs << "# dx = " << qgrid.dx << "\n";
+        ofs << "# dy = " << qgrid.dy << "\n";
+        ofs << "# area_density = " << qgrid.dx * qgrid.dy << "\n";
+    }
+
+    ofs << "\n";
+    ofs << "# iq jq qx qy chi_real chi_imag nKpair nK\n";
+
+    const auto& chiF =
+        qgrid.get<std::complex<double>>("chi").v;
+
+    const auto& qxF =
+        qgrid.get<double>("qx").v;
+
+    const auto& qyF =
+        qgrid.get<double>("qy").v;
+
+    const auto& nPairF =
+        qgrid.get<long long>("nKpair").v;
+
+    for (size_t i = 0; i < qgrid.size(); ++i) {
+        long long nK = 0;
+
+        if (param.dim > 0) {
+            const long long band_pair_factor =
+                cfg.diagonal_band_only
+                ? static_cast<long long>(param.dim)
+                : (
+                    static_cast<long long>(param.dim)
+                  * static_cast<long long>(param.dim)
+                  );
+
+            nK =
+                nPairF[i] / band_pair_factor;
+        }
+
+        ofs << qgrid.iq[i] << " "
+            << qgrid.jq[i] << " "
+            << qxF[i] << " "
+            << qyF[i] << " "
+            << chiF[i].real() << " "
+            << chiF[i].imag() << " "
+            << nPairF[i] << " "
+            << nK << "\n";
+    }
 }
 
 } // namespace
@@ -240,27 +448,21 @@ int main(int argc, char** argv)
         const std::string run_stamp =
             rgio::make_time_stamp("chi");
 
-        const std::string output_suffix =
+        const std::string parameter_suffix =
             chi_output_suffix(cfg);
+
+        const std::string B_tag =
+            infer_B_tag_from_fermi_path(cfg.fermi_patch_path);
 
         for (double polar_mu : cfg.polar_list) {
 
-            const fs::path run_dir =
+            const fs::path run_base_dir =
                 fs::path(cfg.data_dir)
-                / (
-                    std::string("chi_")
-                  + cfg.model
-                  + "_mu_"
-                  + output_suffix
-                )
                 / (std::string("D") + rgio::tag3(cfg.Dfield_eV))
-                / (
-                    std::string("polar_meV")
-                  + rgio::tag3(1000.0 * polar_mu)
-                );
+                / B_tag;
 
             if (rank == 0) {
-                fs::create_directories(run_dir);
+                fs::create_directories(run_base_dir);
 
                 std::cout << "=== calculate_chi from fermiPatch bin ===\n";
                 std::cout << "config          = " << config_file << "\n";
@@ -268,7 +470,7 @@ int main(int argc, char** argv)
                 std::cout << "input_format    = bin\n";
                 std::cout << "boundary        = " << cfg.boundary << "\n";
                 std::cout << "Dfield_eV       = " << cfg.Dfield_eV << "\n";
-                std::cout << "polar_meV       = " << 1000.0 * polar_mu << "\n";
+                std::cout << "polar_mu        = disabled (using fermi spin patches)\n";
                 std::cout << "q integer       = (" << cfg.iq << ", "
                           << cfg.jq << ")\n";
                 std::cout << "eta             = " << cfg.eta << "\n";
@@ -278,19 +480,16 @@ int main(int argc, char** argv)
                 std::cout << "diagonal_band_only = "
                           << (cfg.diagonal_band_only ? "true" : "false")
                           << "\n";
-                std::cout << "suffix          = " << output_suffix << "\n";
+                std::cout << "B tag           = " << B_tag << "\n";
+                std::cout << "param suffix    = " << parameter_suffix << "\n";
                 std::cout << "fermi root      = " << cfg.fermi_patch_path << "\n";
-                std::cout << "out root        = " << run_dir.string() << "\n";
+                std::cout << "out root        = " << run_base_dir.string() << "\n";
                 std::cout << "MPI ranks       = " << nprocs << "\n";
             }
 
             rgmpi::barrier();
 
             for (double T_K : cfg.temperature_list) {
-
-                const fs::path T_src =
-                    fs::path(cfg.fermi_patch_path)
-                    / (std::string("T") + rgio::tag3(T_K));
 
                 for (double mu_raw : cfg.mu_list) {
 
@@ -300,7 +499,12 @@ int main(int argc, char** argv)
                     }
 
                     const fs::path mu_src =
-                        T_src / make_mu_tag(mu);
+                        resolve_mu_source_dir(
+                            fs::path(cfg.fermi_patch_path),
+                            cfg.Dfield_eV,
+                            T_K,
+                            mu
+                        );
 
                     if (rank == 0) {
                         std::cout << "------------------------------------------------------------\n";
@@ -336,7 +540,7 @@ int main(int argc, char** argv)
                     rgmpi::barrier();
 
                     const fs::path out_T =
-                        run_dir / (std::string("T") + rgio::tag3(T_K));
+                        run_base_dir / (std::string("T") + rgio::tag3(T_K));
 
                     const fs::path out_mu =
                         out_T / make_mu_tag(mu);
@@ -374,6 +578,7 @@ int main(int argc, char** argv)
                     double occ_up_acc = 0.0;
                     double occ_dn_acc = 0.0;
                     std::vector<rgio::cal_chi_param> patch_params;
+                    std::vector<rgio::cal_chi_result> patch_results;
 
                     for (const auto& fermi_bin : fermi_bins) {
                         rgio::cal_chi_param patch_param = base_param;
@@ -422,6 +627,7 @@ int main(int argc, char** argv)
                         occ_up_acc += patch_res.occTot_up;
                         occ_dn_acc += patch_res.occTot_dn;
                         patch_params.push_back(patch_param);
+                        patch_results.push_back(patch_res);
                     }
 
                     if (!have_res) {
@@ -455,132 +661,42 @@ int main(int argc, char** argv)
                             );
                     }
 
-                    core::GridData& qgrid =
-                        res.qgrid;
-
                     if (rank == 0) {
-                        const fs::path out_path =
-                            out_mu
-                            / (std::string("chi_") + run_stamp + ".txt");
-
-                        std::ofstream ofs(out_path.string());
-
-                        if (!ofs) {
-                            throw std::runtime_error(
-                                "Cannot open output chi file: "
-                                + out_path.string()
-                            );
-                        }
-
-                        ofs << std::setprecision(15);
-
-                        ofs << "# --- calculate_chi ---\n";
-                        ofs << "# model = " << cfg.model << "\n";
-                        ofs << "# input_format = bin\n";
-                        ofs << "# boundary = " << cfg.boundary << "\n";
-                        ofs << "# Dfield_eV = " << cfg.Dfield_eV << "\n";
-                        ofs << "# polar_mu_eV = " << polar_mu << "\n";
-                        ofs << "# polar_meV = " << 1000.0 * polar_mu << "\n";
-                        ofs << "# T_K = " << param.T_K << "\n";
-                        ofs << "# EF = " << param.Ef << "\n";
-                        ofs << "# doping = " << res.doping << "\n";
-                        ofs << "# filling = " << res.filling << "\n";
-                        ofs << "# eta = " << cfg.eta << "\n";
-                        ofs << "# use_form_factor = "
-                            << (cfg.use_form_factor ? "true" : "false")
-                            << "\n";
-                        ofs << "# diagonal_band_only = "
-                            << (cfg.diagonal_band_only ? "true" : "false")
-                            << "\n";
-                        ofs << "# band_scattering = "
-                            << (cfg.diagonal_band_only ? "diagonal" : "all")
-                            << "\n";
-                        ofs << "# form_factor_kind = "
-                            << (
-                                cfg.use_form_factor
-                                ? "density_overlap"
-                                : "none"
-                               )
-                            << "\n";
-                        ofs << "# iq = " << cfg.iq << "\n";
-                        ofs << "# jq = " << cfg.jq << "\n";
-                        ofs << "# q_unit = iq * dx * b1 + jq * dy * b2\n";
-                        ofs << "# normalization = sum_k * area_density\n";
-                        ofs << "# fermiPatch_count = "
-                            << fermi_bins.size() << "\n";
-                        ofs << "# fermiPatch_average = arithmetic_mean\n";
-
                         for (size_t ibin = 0; ibin < fermi_bins.size(); ++ibin) {
-                            ofs << "# fermiPatch_bin_" << ibin
-                                << " = " << fermi_bins[ibin] << "\n";
+                            const std::string label =
+                                patch_label_from_path(fermi_bins[ibin]);
 
-                            if (ibin < patch_params.size()
-                             && patch_params[ibin].has_spin_metadata)
-                            {
-                                ofs << "# fermiPatch_spin_sign_" << ibin
-                                    << " = " << patch_params[ibin].spin_sign
-                                    << "\n";
-                                ofs << "# fermiPatch_doping_spin_" << ibin
-                                    << " = " << patch_params[ibin].doping_spin
-                                    << "\n";
-                                ofs << "# fermiPatch_filling_spin_" << ibin
-                                    << " = " << patch_params[ibin].filling_spin
-                                    << "\n";
-                            }
+                            const fs::path out_path =
+                                out_mu
+                                / (
+                                    std::string("chi_")
+                                  + label
+                                  + "_"
+                                  + parameter_suffix
+                                  + "_"
+                                  + run_stamp
+                                  + ".txt"
+                                );
+
+                            write_chi_txt_file(
+                                out_path,
+                                cfg,
+                                patch_params[ibin],
+                                patch_results[ibin],
+                                std::vector<std::string>{fermi_bins[ibin]},
+                                std::vector<rgio::cal_chi_param>{patch_params[ibin]},
+                                label
+                            );
+
+                            std::cout << "[out] Wrote: "
+                                      << out_path.string()
+                                      << "\n";
                         }
 
-                        if (qgrid.dx > 0.0 && qgrid.dy > 0.0) {
-                            ofs << "# dx = " << qgrid.dx << "\n";
-                            ofs << "# dy = " << qgrid.dy << "\n";
-                            ofs << "# area_density = "
-                                << qgrid.dx * qgrid.dy << "\n";
-                        }
-
-                        ofs << "\n";
-                        ofs << "# iq jq qx qy chi_real chi_imag nKpair nK\n";
-
-                        const auto& chiF =
-                            qgrid.get<std::complex<double>>("chi").v;
-
-                        const auto& qxF =
-                            qgrid.get<double>("qx").v;
-
-                        const auto& qyF =
-                            qgrid.get<double>("qy").v;
-
-                        const auto& nPairF =
-                            qgrid.get<long long>("nKpair").v;
-
-                        for (size_t i = 0; i < qgrid.size(); ++i) {
-                            long long nK = 0;
-
-                            if (param.dim > 0) {
-                                const long long band_pair_factor =
-                                    cfg.diagonal_band_only
-                                    ? static_cast<long long>(param.dim)
-                                    : (
-                                        static_cast<long long>(param.dim)
-                                      * static_cast<long long>(param.dim)
-                                      );
-
-                                nK =
-                                    nPairF[i]
-                                    / band_pair_factor;
-                            }
-
-                            ofs << qgrid.iq[i] << " "
-                                << qgrid.jq[i] << " "
-                                << qxF[i] << " "
-                                << qyF[i] << " "
-                                << chiF[i].real() << " "
-                                << chiF[i].imag() << " "
-                                << nPairF[i] << " "
-                                << nK << "\n";
-                        }
-
-                        std::cout << "[out] Wrote: "
-                                  << out_path.string()
-                                  << "\n";
+                        std::cout << "[avg] arithmetic mean over "
+                                  << fermi_bins.size()
+                                  << " branch chi result(s) is available in memory; "
+                                  << "only branch-resolved chi files are written.\n";
                     }
 
                     rgmpi::barrier();

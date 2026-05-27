@@ -1,10 +1,8 @@
 function H = plot_berry_curvature_kmesh_maps(txt_file)
 
-clc; close all;
+data_folder = "E:\rg_master\rhombohedral\data\berry_curvature_sk_50_b1b2_0.00125\D-0.010";
 
-default_root = "E:\rg_master\rhombohedral\data";
-
-band_list = [4, 5, 6];
+band_list = 4;
 energy_unit = "eV";
 energy_shift_eV = 0.0;
 xy_mode = "kxy";          % "kxy" or "ij"
@@ -13,23 +11,17 @@ berry_clim = [];          % [] = auto; or set manually, e.g. [-10, 10]
 marker_size = 12;
 FS = 15;
 save_figure = true;
+save_fig_file = false;
 out_dir = "";
 
 if nargin < 1 || strlength(string(txt_file)) == 0
-    if ~isfolder(default_root)
-        default_root = pwd;
+    txt_file = latest_txt_in_folder_(data_folder, "berry_curvature_*.txt");
+
+    if strlength(txt_file) == 0
+        error("Cannot find berry_curvature_*.txt under folder: %s", data_folder);
     end
 
-    [fn, fp] = uigetfile( ...
-        fullfile(default_root, "berry_curvature_*.txt"), ...
-        "Select berry_curvature kmesh txt file");
-
-    if isequal(fn, 0)
-        H = struct();
-        return;
-    end
-
-    txt_file = string(fullfile(fp, fn));
+    fprintf("Using file: %s\n", txt_file);
 else
     txt_file = string(txt_file);
 end
@@ -110,62 +102,89 @@ for ib = 1:numel(bands)
     E = (data(:, ecol) - energy_shift_eV) * escale;
     omega = data(:, ocol);
 
-    figE = make_map_figure_( ...
+    figPair = make_pair_map_figure_( ...
         x, y, E, ...
-        sprintf("band %d: E(k)", b), ...
-        e_label, ...
+        omega, ...
+        sprintf("band %d", b), ...
+        e_label, "\Omega_z (Angstrom^2)", ...
         x_label, y_label, ...
-        parula(256), ...
+        parula(256), turbo(256), ...
         [], ...
-        FS, marker_size);
-
-    figO = make_map_figure_( ...
-        x, y, omega, ...
-        sprintf("band %d: \\Omega_z(k)", b), ...
-        "\Omega_z (Angstrom^2)", ...
-        x_label, y_label, ...
-        turbo(256), ...
         choose_clim_(omega, omega_clim_mode, berry_clim), ...
         FS, marker_size);
 
     if save_figure
-        outE = fullfile(out_dir, sprintf("%s_band%d_E_%s_map.png", base, b, e_tag));
-        outO = fullfile(out_dir, sprintf("%s_band%d_berry_A2_map.png", base, b));
-        exportgraphics(figE, outE, "Resolution", 300);
-        exportgraphics(figO, outO, "Resolution", 300);
-        fprintf("Saved figure: %s\n", outE);
-        fprintf("Saved figure: %s\n", outO);
+        outPair = fullfile(out_dir, sprintf("%s_band%d_E_%s_berry_A2_map.png", base, b, e_tag));
+        exportgraphics(figPair, outPair, "Resolution", 300);
+        if save_fig_file
+            savefig(figPair, replace(outPair, ".png", ".fig"));
+        end
+        fprintf("Saved figure: %s\n", outPair);
     end
 
     H.maps(ib).band = b;
     H.maps(ib).E_plot = E;
     H.maps(ib).berry_A2 = omega;
-    H.maps(ib).figure_E = figE;
-    H.maps(ib).figure_berry = figO;
+    H.maps(ib).figure_pair = figPair;
 end
 
 end
 
-function fig = make_map_figure_(x, y, val, ttl, cb_label, x_label, y_label, cmap, clim_value, FS, marker_size)
+function f = latest_txt_in_folder_(folder, pattern)
+d = dir(fullfile(folder, pattern));
+d = d(~[d.isdir]);
+if isempty(d)
+    f = "";
+    return;
+end
+[~, idx] = max([d.datenum]);
+f = string(fullfile(d(idx).folder, d(idx).name));
+end
 
-fig = figure("Color", "w", "Units", "pixels", "Position", [120 120 720 620]);
-ax = axes(fig);
-scatter(ax, x, y, marker_size, val, "filled", ...
+function fig = make_pair_map_figure_(x, y, val_left, val_right, ttl, ...
+    cb_label_left, cb_label_right, x_label, y_label, cmap_left, cmap_right, ...
+    clim_left, clim_right, FS, marker_size)
+
+fig = figure("Color", "w", "Units", "pixels", "Position", [120 120 1160 540]);
+tiledlayout(fig, 1, 2, "TileSpacing", "compact", "Padding", "compact");
+
+ax1 = nexttile;
+scatter(ax1, x, y, marker_size, val_left, "filled", ...
     "MarkerEdgeAlpha", 0.0, ...
     "MarkerFaceAlpha", 1.0);
-axis(ax, "equal");
-box(ax, "on");
-set(ax, "FontSize", FS, "LineWidth", 1.3, "TickDir", "in", "Box", "on");
-colormap(ax, cmap);
-if ~isempty(clim_value)
-    clim(ax, clim_value);
+axis(ax1, "equal");
+box(ax1, "on");
+set(ax1, "FontSize", FS, "LineWidth", 1.3, "TickDir", "in", "Box", "on");
+colormap(ax1, cmap_left);
+if ~isempty(clim_left)
+    clim(ax1, clim_left);
 end
-cb = colorbar(ax);
-cb.Label.String = cb_label;
-cb.LineWidth = 1.0;
-xlabel(ax, x_label);
-ylabel(ax, y_label);
-title(ax, ttl, "Interpreter", "none");
+cb1 = colorbar(ax1);
+cb1.Label.String = cb_label_left;
+cb1.LineWidth = 1.0;
+xlabel(ax1, x_label);
+ylabel(ax1, y_label);
+title(ax1, "energy", "Interpreter", "none");
+
+ax2 = nexttile;
+scatter(ax2, x, y, marker_size, val_right, "filled", ...
+    "MarkerEdgeAlpha", 0.0, ...
+    "MarkerFaceAlpha", 1.0);
+axis(ax2, "equal");
+box(ax2, "on");
+set(ax2, "FontSize", FS, "LineWidth", 1.3, "TickDir", "in", "Box", "on");
+colormap(ax2, cmap_right);
+if ~isempty(clim_right)
+    clim(ax2, clim_right);
+end
+cb2 = colorbar(ax2);
+cb2.Label.String = cb_label_right;
+cb2.LineWidth = 1.0;
+xlabel(ax2, x_label);
+ylabel(ax2, y_label);
+title(ax2, "Berry curvature", "Interpreter", "none");
+
+sgtitle(fig, ttl, "Interpreter", "none", "FontSize", FS);
 
 end
 

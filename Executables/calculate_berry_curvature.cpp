@@ -128,8 +128,6 @@ static std::string auto_output_suffix(
             << compact_double_tag(cfg.kmesh.dk_frac);
     }
 
-    oss << "_D"
-        << compact_double_tag(cfg.Dfield_eV);
     return oss.str();
 }
 

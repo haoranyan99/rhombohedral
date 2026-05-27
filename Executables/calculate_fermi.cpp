@@ -106,6 +106,21 @@ static std::string fermi_output_suffix(
     return suffix;
 }
 
+static std::string B_dir_tag(double B_T)
+{
+    return std::string("B") + compact_double_tag(B_T) + "T";
+}
+
+static std::string valley_tag(int valley_sign)
+{
+    return (valley_sign >= 0) ? "valley_plus" : "valley_minus";
+}
+
+static std::string spin_tag(int spin_sign)
+{
+    return (spin_sign >= 0) ? "spin_up" : "spin_down";
+}
+
 static core::GridData make_kmesh(
     const rg::RG_Structure& st,
     const config::MeshCfg& mesh
@@ -194,6 +209,18 @@ static double total_filling_from_local_patch(
     return 0.5
          + area_fraction
          * (filling_patch - 0.5);
+}
+
+static double total_doping_from_single_valley_filling(
+    double filling_single_valley,
+    double lattice_a
+) {
+    constexpr double valley_degeneracy = 2.0;
+    return valley_degeneracy
+         * la::filling_to_doping(
+               filling_single_valley,
+               lattice_a
+           );
 }
 
 // ============================================================
@@ -431,7 +458,8 @@ int main(int argc, char** argv)
             std::cout << "doping     = local-kmesh approximation\n";
             std::cout << "kmesh_frac = " << std::setprecision(12)
                       << kmesh_area_fraction
-                      << " (outside patch fixed at filling=0.5, doping=0)\n";
+                      << " (outside patch fixed at filling=0.5, doping=0; "
+                      << "density includes valley degeneracy 2)\n";
 
             std::cout << "MPI        = " << nprocs << " ranks\n";
 
@@ -454,39 +482,29 @@ int main(int argc, char** argv)
             const std::string output_suffix =
                 fermi_output_suffix(cfg, B_T);
 
-            const fs::path root_dir =
-                base_dir
-                / (
-                    std::string("fermi_")
-                  + cfg.model
-                  + "_mu_"
-                  + output_suffix
-                  + run_stamp
-                );
-
             const fs::path D_dir =
-                root_dir
+                base_dir
                 / (std::string("D") + rgio::tag3(cfg.Dfield_eV));
 
+            const fs::path B_dir =
+                D_dir / B_dir_tag(B_T);
+
             if (rank == 0) {
-                fs::create_directories(D_dir);
+                fs::create_directories(B_dir);
                 std::cout << "\n[B="
                           << compact_double_tag(B_T)
                           << " T] suffix="
                           << output_suffix
                           << " out_root="
-                          << D_dir.string()
+                          << B_dir.string()
                           << "\n";
             }
 
             rgmpi::barrier();
 
-            const bool use_magnetic_splitting =
-                std::abs(B_T) > 0.0;
-
             for (double T_K : cfg.temperature_list) {
                 const fs::path T_dir =
-                    D_dir / (std::string("T") + rgio::tag3(T_K));
+                    B_dir / (std::string("T") + rgio::tag3(T_K));
 
                 if (rank == 0) {
                     fs::create_directories(T_dir);
@@ -512,34 +530,22 @@ int main(int argc, char** argv)
                     // ====================================================
                     // 1. Local/truncated fermi patch with eigenvectors
                     // ====================================================
-                    core::GridData fsgrid;
-                    core::GridData fsgrid_up;
-                    core::GridData fsgrid_dn;
+                    struct Branch {
+                        int valley_sign;
+                        int spin_sign;
+                        core::GridData grid;
+                        double filling_patch = 0.5;
+                        double filling_total = 0.5;
+                        double doping_total = 0.0;
+                    };
 
-                    if (use_magnetic_splitting) {
-                        fsgrid_up =
-                            model.cal_fermi_patch_from_mu_magnetic(
-                                mu,
-                                T_K,
-                                kpatch,
-                                B_T,
-                                cfg.g_factor,
-                                cfg.orbital_derivative_dk,
-                                +1
-                            );
+                    std::vector<Branch> branches;
+                    const bool has_magnetic_field =
+                        std::abs(B_T) > 0.0;
 
-                        fsgrid_dn =
-                            model.cal_fermi_patch_from_mu_magnetic(
-                                mu,
-                                T_K,
-                                kpatch,
-                                B_T,
-                                cfg.g_factor,
-                                cfg.orbital_derivative_dk,
-                                -1
-                            );
-                    } else {
-                        fsgrid =
+                    core::GridData zero_field_grid;
+                    if (!has_magnetic_field) {
+                        zero_field_grid =
                             model.cal_fermi_patch_from_mu(
                                 mu,
                                 T_K,
@@ -547,76 +553,71 @@ int main(int argc, char** argv)
                             );
                     }
 
+                    for (int valley_sign : {+1, -1}) {
+                        for (int spin_sign : {+1, -1}) {
+                            Branch branch;
+                            branch.valley_sign = valley_sign;
+                            branch.spin_sign = spin_sign;
+                            if (has_magnetic_field) {
+                                branch.grid =
+                                    model.cal_fermi_patch_from_mu_magnetic(
+                                        mu,
+                                        T_K,
+                                        kpatch,
+                                        B_T,
+                                        cfg.g_factor,
+                                        cfg.orbital_derivative_dk,
+                                        spin_sign,
+                                        valley_sign
+                                    );
+                            } else {
+                                branch.grid = zero_field_grid;
+                            }
+                            branches.push_back(std::move(branch));
+                        }
+                    }
+
                     // ====================================================
                     // 2. Approximate total filling/doping from local patch
                     //    Outside the patch is fixed at half filling.
                     // ====================================================
-                    double filling_patch = 0.5;
-                    double filling_up_patch = 0.5;
-                    double filling_dn_patch = 0.5;
-
                     double filling_total = 0.5;
                     double doping_total = 0.0;
-                    double filling_up_total = 0.5;
-                    double filling_dn_total = 0.5;
-                    double doping_up_total = 0.0;
-                    double doping_dn_total = 0.0;
 
-                    if (use_magnetic_splitting) {
-                        filling_up_patch =
-                            patch_filling(fsgrid_up);
+                    double filling_patch_acc = 0.0;
+                    double filling_acc = 0.0;
 
-                        filling_dn_patch =
-                            patch_filling(fsgrid_dn);
+                    for (auto& branch : branches) {
+                        branch.filling_patch =
+                            patch_filling(branch.grid);
+                        filling_patch_acc += branch.filling_patch;
 
-                        filling_up_total =
+                        branch.filling_total =
                             total_filling_from_local_patch(
-                                filling_up_patch,
+                                branch.filling_patch,
                                 kmesh_area_fraction
                             );
 
-                        filling_dn_total =
-                            total_filling_from_local_patch(
-                                filling_dn_patch,
-                                kmesh_area_fraction
-                            );
-
-                        filling_total =
-                            0.5 * (filling_up_total + filling_dn_total);
-
-                        doping_up_total =
-                            la::filling_to_doping(
-                                filling_up_total,
+                        branch.doping_total =
+                            total_doping_from_single_valley_filling(
+                                branch.filling_total,
                                 st.a()
                             );
 
-                        doping_dn_total =
-                            la::filling_to_doping(
-                                filling_dn_total,
-                                st.a()
-                            );
-
-                        doping_total =
-                            la::filling_to_doping(
-                                filling_total,
-                                st.a()
-                            );
-                    } else {
-                        filling_patch =
-                            patch_filling(fsgrid);
-
-                        filling_total =
-                            total_filling_from_local_patch(
-                                filling_patch,
-                                kmesh_area_fraction
-                            );
-
-                        doping_total =
-                            la::filling_to_doping(
-                                filling_total,
-                                st.a()
-                            );
+                        filling_acc += branch.filling_total;
                     }
+
+                    filling_total = filling_acc
+                        / static_cast<double>(branches.size());
+                    const double filling_patch_avg =
+                        filling_patch_acc
+                      / static_cast<double>(branches.size());
+
+                    doping_total =
+                        total_doping_from_single_valley_filling(
+                            filling_total,
+                            st.a()
+                        );
 
                     if (rank != 0) {
                         continue;
@@ -640,26 +641,22 @@ int main(int argc, char** argv)
                               << doping_total
                               << " filling_patch="
                               << std::setprecision(10)
-                              << (
-                                     use_magnetic_splitting
-                                   ? 0.5 * (filling_up_patch + filling_dn_patch)
-                                   : filling_patch
-                                 );
+                              << filling_patch_avg;
 
-                    if (use_magnetic_splitting) {
+                    for (const auto& branch : branches) {
                         std::cout
-                                  << " filling_up="
-                                  << filling_up_total
-                                  << " filling_down="
-                                  << filling_dn_total
-                                  << " filling_up_patch="
-                                  << filling_up_patch
-                                  << " filling_down_patch="
-                                  << filling_dn_patch
-                                  << " doping_up="
-                                  << doping_up_total
-                                  << " doping_down="
-                                  << doping_dn_total;
+                              << " "
+                              << valley_tag(branch.valley_sign)
+                              << "_"
+                              << spin_tag(branch.spin_sign)
+                              << "_filling="
+                              << branch.filling_total
+                              << " "
+                              << valley_tag(branch.valley_sign)
+                              << "_"
+                              << spin_tag(branch.spin_sign)
+                              << "_doping="
+                              << branch.doping_total;
                     }
 
                     std::cout << "\n";
@@ -671,61 +668,27 @@ int main(int argc, char** argv)
                         T_dir / mu_tag;
                     fs::create_directories(mu_dir);
 
-                    if (use_magnetic_splitting) {
-                        const fs::path out_path_up =
-                            mu_dir
-                            / "fermi_spin_up_patch.bin";
-
-                        const fs::path out_path_dn =
-                            mu_dir
-                            / "fermi_spin_down_patch.bin";
-
-                        write_fermi_patch_bin(
-                            out_path_up.string(),
-                            fsgrid_up,
-                            EF_used,
-                            T_K,
-                            doping_total,
-                            filling_total,
-                            +1,
-                            doping_up_total,
-                            filling_up_total
-                        );
-
-                        write_fermi_patch_bin(
-                            out_path_dn.string(),
-                            fsgrid_dn,
-                            EF_used,
-                            T_K,
-                            doping_total,
-                            filling_total,
-                            -1,
-                            doping_dn_total,
-                            filling_dn_total
-                        );
-
-                        std::cout << "Wrote: "
-                                  << out_path_up.string()
-                                  << "\n";
-
-                        std::cout << "Wrote: "
-                                  << out_path_dn.string()
-                                  << "\n";
-                    } else {
+                    for (const auto& branch : branches) {
                         const fs::path out_path =
                             mu_dir
-                            / "fermiPatch.bin";
+                            / (
+                                std::string("fermi_")
+                              + valley_tag(branch.valley_sign)
+                              + "_"
+                              + spin_tag(branch.spin_sign)
+                              + "_patch.bin"
+                            );
 
                         write_fermi_patch_bin(
                             out_path.string(),
-                            fsgrid,
+                            branch.grid,
                             EF_used,
                             T_K,
                             doping_total,
                             filling_total,
-                            0,
-                            doping_total,
-                            filling_total
+                            branch.spin_sign,
+                            branch.doping_total,
+                            branch.filling_total
                         );
 
                         std::cout << "Wrote: "

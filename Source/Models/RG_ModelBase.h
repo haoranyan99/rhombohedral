@@ -110,7 +110,8 @@ public:
         double B_T,
         double g_factor,
         double derivative_dk,
-        int spin_sign
+        int spin_sign,
+        int valley_sign = +1
     ) const;
 
     virtual core::GridData cal_fermi_patch_from_mu(
@@ -126,7 +127,8 @@ public:
         double B_T,
         double g_factor,
         double derivative_dk,
-        int spin_sign
+        int spin_sign,
+        int valley_sign = +1
     ) const;
 
     virtual core::GridData cal_chi_grid_Ef(
@@ -175,7 +177,8 @@ protected:
         double m_orb_muB,
         double B_T,
         double g_factor,
-        int spin_sign
+        int spin_sign,
+        int valley_sign = +1
     );
 
     void write_info_common_(
@@ -383,19 +386,25 @@ inline double RG_ModelBase::magnetic_energy_shift_(
     double m_orb_muB,
     double B_T,
     double g_factor,
-    int spin_sign
+    int spin_sign,
+    int valley_sign
 ) {
     const int s =
         (spin_sign >= 0) ? +1 : -1;
+    const int tau =
+        (valley_sign >= 0) ? +1 : -1;
 
     const double orbital_shift =
-        -m_orb_muB * la::muB_eV_per_T * B_T;
+        -static_cast<double>(tau)
+       * m_orb_muB
+       * la::muB_eV_per_T
+       * B_T;
 
     const double zeeman_shift =
-        -0.5 * static_cast<double>(s)
-        * g_factor
-        * la::muB_eV_per_T
-        * B_T;
+        static_cast<double>(s)
+      * g_factor
+      * la::muB_eV_per_T
+      * B_T;
 
     return orbital_shift + zeeman_shift;
 }
@@ -839,7 +848,8 @@ inline double RG_ModelBase::find_filling_from_EF_magnetic(
     double B_T,
     double g_factor,
     double derivative_dk,
-    int spin_sign
+    int spin_sign,
+    int valley_sign
 ) const {
     kpatch.assert_consistent();
 
@@ -907,7 +917,8 @@ inline double RG_ModelBase::find_filling_from_EF_magnetic(
                     m_muB[static_cast<size_t>(b)],
                     B_T,
                     g_factor,
-                    spin_sign
+                    spin_sign,
+                    valley_sign
                 );
 
             occ_local += la::fermi(e_eff, EF, T_K);
@@ -1463,7 +1474,8 @@ inline core::GridData RG_ModelBase::cal_fermi_patch_from_mu_magnetic(
     double B_T,
     double g_factor,
     double derivative_dk,
-    int spin_sign
+    int spin_sign,
+    int valley_sign
 ) const {
     kpatch.assert_consistent();
 
@@ -1633,7 +1645,8 @@ inline core::GridData RG_ModelBase::cal_fermi_patch_from_mu_magnetic(
                     m_muB[static_cast<size_t>(b)],
                     B_T,
                     g_factor,
-                    spin_sign
+                    spin_sign,
+                    valley_sign
                 );
 
             const double fb =

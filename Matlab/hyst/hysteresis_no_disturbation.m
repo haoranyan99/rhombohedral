@@ -8,7 +8,7 @@ coef = make_realchi_coeff(par);
 % =========================
 T_list = [6.4];
 artificial_polar_list = 0:0.05:2.1;
-% artificial_polar_list = [2];
+artificial_polar_list = [0];
 
 use_parallel = true;   % <<< 是否并行
 par.hyst.force_fwd_psi_zero = true;
@@ -18,9 +18,9 @@ plot_a1  = false;
 plot_psi = false;
 plot_X   = false;
 
-% plot_a1  = true;
-% plot_psi = true;
-% plot_X   = true;
+plot_a1  = true;
+plot_psi = true;
+plot_X   = true;
 
 default_root = "E:/rg_master/rhombohedral/data/";
 if ~isfolder(default_root)

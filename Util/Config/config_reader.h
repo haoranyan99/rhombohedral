@@ -140,6 +140,7 @@ struct CalOrbitalMomentConfig {
 
     double Dfield_eV = 0.0;
     double derivative_dk = 1e-5;
+    std::vector<double> Bfield_list_T;
 
     MeshCfg kmesh;
     std::string mode = "auto";
@@ -155,6 +156,25 @@ using CalBerryCurvatureConfig = CalOrbitalMomentConfig;
 inline CalOrbitalMomentConfig read_cal_orbital_moment_like_config(
     const std::string& config_file,
     const std::string& task_name
+);
+
+struct CalMagneticBandConfig : CalOrbitalMomentConfig {
+    double g_factor = 2.0;
+    std::vector<double> Bfield_list_T;
+};
+
+struct CalMagneticDOSConfig : CalDOSConfig {
+    double g_factor = 2.0;
+    double orbital_derivative_dk = 1e-5;
+    std::vector<double> Bfield_list_T;
+};
+
+inline CalMagneticBandConfig read_cal_magnetic_band_config(
+    const std::string& config_file
+);
+
+inline CalMagneticDOSConfig read_cal_magnetic_dos_config(
+    const std::string& config_file
 );
 
 struct CalChiConfig {
@@ -614,6 +634,207 @@ inline CalBerryCurvatureConfig read_cal_berry_curvature_config(
     );
 }
 
+inline void read_Bfield_list_and_magnetic_params(
+    const json& task,
+    std::vector<double>& Bfield_list_T,
+    double& g_factor,
+    double& derivative_dk
+) {
+    if (task.contains("BfieldList_T")) {
+        Bfield_list_T =
+            read_range(task.at("BfieldList_T"));
+    }
+
+    if (task.contains("BList_T")) {
+        Bfield_list_T =
+            read_range(task.at("BList_T"));
+    }
+
+    if (task.contains("g_factor")) {
+        g_factor =
+            task.at("g_factor").get<double>();
+    }
+
+    if (task.contains("orbital_derivative_dk")) {
+        derivative_dk =
+            task.at("orbital_derivative_dk").get<double>();
+    }
+
+    if (task.contains("derivative_dk")) {
+        derivative_dk =
+            task.at("derivative_dk").get<double>();
+    }
+
+    if (task.contains("magnetic_field")) {
+        const auto& mf =
+            task.at("magnetic_field");
+
+        if (mf.contains("BfieldList_T")) {
+            Bfield_list_T =
+                read_range(mf.at("BfieldList_T"));
+        }
+
+        if (mf.contains("BList_T")) {
+            Bfield_list_T =
+                read_range(mf.at("BList_T"));
+        }
+
+        if (mf.contains("g_factor")) {
+            g_factor =
+                mf.at("g_factor").get<double>();
+        }
+
+        if (mf.contains("orbital_derivative_dk")) {
+            derivative_dk =
+                mf.at("orbital_derivative_dk").get<double>();
+        }
+
+        if (mf.contains("derivative_dk")) {
+            derivative_dk =
+                mf.at("derivative_dk").get<double>();
+        }
+    }
+
+    if (Bfield_list_T.empty()) {
+        Bfield_list_T.push_back(0.0);
+    }
+}
+
+inline CalMagneticBandConfig read_cal_magnetic_band_config(
+    const std::string& config_file
+) {
+    CalOrbitalMomentConfig base =
+        read_cal_orbital_moment_like_config(
+            config_file,
+            "calculate_magnetic_band"
+        );
+
+    CalMagneticBandConfig cfg;
+    static_cast<CalOrbitalMomentConfig&>(cfg) = base;
+
+    std::ifstream fin(config_file);
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
+
+    json j;
+    fin >> j;
+    const auto& task =
+        j.at("calculate_magnetic_band");
+
+    read_Bfield_list_and_magnetic_params(
+        task,
+        cfg.Bfield_list_T,
+        cfg.g_factor,
+        cfg.derivative_dk
+    );
+
+    return cfg;
+}
+
+inline CalMagneticDOSConfig read_cal_magnetic_dos_config(
+    const std::string& config_file
+) {
+    std::ifstream fin(config_file);
+    if (!fin) {
+        throw std::runtime_error(
+            "Cannot open config file: " + config_file
+        );
+    }
+
+    json j;
+    fin >> j;
+
+    CalMagneticDOSConfig cfg;
+
+    read_io_common(
+        j,
+        cfg.data_dir,
+        cfg.para_file
+    );
+
+    const auto& task =
+        j.at("calculate_magnetic_dos");
+
+    if (task.contains("model")) {
+        cfg.model =
+            task.at("model").get<std::string>();
+    }
+
+    if (task.contains("Dfield_eV")) {
+        cfg.Dfield_list_eV =
+            std::vector<double>{task.at("Dfield_eV").get<double>()};
+    }
+
+    if (task.contains("DfieldList_eV")) {
+        cfg.Dfield_list_eV =
+            read_range(task.at("DfieldList_eV"));
+    }
+
+    if (task.contains("T_K")) {
+        cfg.T_K =
+            task.at("T_K").get<double>();
+    }
+
+    if (task.contains("output_suffix")) {
+        cfg.output_suffix =
+            task.at("output_suffix").get<std::string>();
+    }
+
+    if (task.contains("kmesh")) {
+        read_mesh_cfg(
+            task.at("kmesh"),
+            cfg.kmesh
+        );
+    }
+
+    if (task.contains("dos")) {
+        const auto& d =
+            task.at("dos");
+
+        if (d.contains("e_low")) {
+            cfg.dos.e_low =
+                d.at("e_low").get<double>();
+        }
+
+        if (d.contains("e_high")) {
+            cfg.dos.e_high =
+                d.at("e_high").get<double>();
+        }
+
+        if (d.contains("num_e")) {
+            cfg.dos.num_e =
+                d.at("num_e").get<int>();
+        }
+
+        if (d.contains("eta")) {
+            cfg.dos.eta =
+                d.at("eta").get<double>();
+        }
+    }
+
+    double derivative_dk =
+        cfg.orbital_derivative_dk;
+
+    read_Bfield_list_and_magnetic_params(
+        task,
+        cfg.Bfield_list_T,
+        cfg.g_factor,
+        derivative_dk
+    );
+
+    cfg.orbital_derivative_dk =
+        derivative_dk;
+
+    if (cfg.Dfield_list_eV.empty()) {
+        cfg.Dfield_list_eV.push_back(0.0);
+    }
+
+    return cfg;
+}
+
 inline CalOrbitalMomentConfig read_cal_orbital_moment_like_config(
     const std::string& config_file,
     const std::string& task_name
@@ -658,6 +879,31 @@ inline CalOrbitalMomentConfig read_cal_orbital_moment_like_config(
     if (task.contains("orbital_derivative_dk")) {
         c.derivative_dk =
             task.at("orbital_derivative_dk").get<double>();
+    }
+
+    if (task.contains("BList_T")) {
+        c.Bfield_list_T =
+            read_range(task.at("BList_T"));
+    }
+
+    if (task.contains("BfieldList_T")) {
+        c.Bfield_list_T =
+            read_range(task.at("BfieldList_T"));
+    }
+
+    if (task.contains("magnetic_field")) {
+        const auto& mf =
+            task.at("magnetic_field");
+
+        if (mf.contains("BList_T")) {
+            c.Bfield_list_T =
+                read_range(mf.at("BList_T"));
+        }
+
+        if (mf.contains("BfieldList_T")) {
+            c.Bfield_list_T =
+                read_range(mf.at("BfieldList_T"));
+        }
     }
 
     if (task.contains("output_suffix")) {
@@ -787,11 +1033,15 @@ inline CalChiConfig read_cal_chi_config(
     cfg.diagonal_band_only =
         c.value("diagonal_overlap_only", cfg.diagonal_band_only);
 
-    cfg.polar_list =
-        read_range(c.at("polarList_meV"));
+    if (c.contains("polarList_meV")) {
+        cfg.polar_list =
+            read_range(c.at("polarList_meV"));
 
-    for (double& x : cfg.polar_list) {
-        x *= 1e-3; // meV -> eV
+        for (double& x : cfg.polar_list) {
+            x *= 1e-3; // meV -> eV
+        }
+    } else {
+        cfg.polar_list = {0.0};
     }
 
     cfg.temperature_list =

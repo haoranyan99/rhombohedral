@@ -52,6 +52,11 @@ static std::string compact_double_tag(double x)
     return s;
 }
 
+static std::string B_tag(double B_T)
+{
+    return std::string("B") + compact_double_tag(B_T) + "T";
+}
+
 static core::GridData make_kmesh(
     const rg::RG_Structure& st,
     const config::MeshCfg& mesh
@@ -128,8 +133,6 @@ static std::string auto_output_suffix(
             << compact_double_tag(cfg.kmesh.dk_frac);
     }
 
-    oss << "_D"
-        << compact_double_tag(cfg.Dfield_eV);
     return oss.str();
 }
 
@@ -389,6 +392,12 @@ int main(int argc, char** argv)
             for (int b : bands) {
                 ofs << " E_b" << b
                     << " m_orb_muB_b" << b;
+                for (double B_T : cfg.Bfield_list_T) {
+                    ofs << " dE_orb_tau_plus_meV_b" << b
+                        << "_" << B_tag(B_T)
+                        << " dE_orb_tau_minus_meV_b" << b
+                        << "_" << B_tag(B_T);
+                }
             }
             ofs << "\n";
 
@@ -414,6 +423,18 @@ int main(int argc, char** argv)
                         << energy_all[pos]
                         << " "
                         << morb_all[pos];
+                    for (double B_T : cfg.Bfield_list_T) {
+                        const double shift_meV =
+                            -morb_all[pos]
+                          * la::muB_eV_per_T
+                          * B_T
+                          * 1000.0;
+
+                        ofs << " "
+                            << shift_meV
+                            << " "
+                            << -shift_meV;
+                    }
                 }
                 ofs << "\n";
             }
