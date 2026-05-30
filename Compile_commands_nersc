@@ -14,17 +14,29 @@ module load PrgEnv-gnu/8.5.0
 module load cray-mpich/8.1.30
 
 # Build all production MPI executables into bin/
+# The Makefile uses:
+#   CXX=CC
+#   CXXFLAGS += -DUSE_MPI
+# so calculate_chi is compiled with MPI enabled.
+JOBS="${JOBS:-8}"
 make clean
-make -j 8
+make -j "${JOBS}"
 
-# Or build one target:
-make calculate_fermi
-make calculate_chi
-make calculate_orbital_moment
-make calculate_berry_curvature
+# Or build one target in parallel:
+make -j "${JOBS}" calculate_fermi
+make -j "${JOBS}" calculate_chi
+make -j "${JOBS}" calculate_orbital_moment
+make -j "${JOBS}" calculate_berry_curvature
+make -j "${JOBS}" calculate_magnetic_band
+make -j "${JOBS}" calculate_magnetic_dos
 
-# Example interactive runs:
+# Example MPI runs.
+# For debug/small tests:
 srun -n 4 -c 1 --cpu_bind=cores ./bin/calculate_fermi config.json
 srun -n 4 -c 1 --cpu_bind=cores ./bin/calculate_chi config.json
 srun -n 4 -c 1 --cpu_bind=cores ./bin/calculate_orbital_moment config.json
 srun -n 4 -c 1 --cpu_bind=cores ./bin/calculate_berry_curvature config.json
+
+# For production Perlmutter CPU jobs, match submit_*.slurm:
+# 4 nodes x 128 MPI ranks/node = 512 ranks.
+srun -N 4 --ntasks-per-node=128 -c 1 --cpu_bind=cores ./bin/calculate_chi config.json

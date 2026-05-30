@@ -14,7 +14,28 @@
 
 
 # ============================================================
-# Serial builds (g++, no MPI)
+# Recommended parallel build for chi (MPI)
+# ============================================================
+
+# calculate_chi parallel version
+mpicxx -std=c++17 -O2 -DNDEBUG -DUSE_MPI \
+  -I. \
+  -I./include \
+  -I./include/eigen-3.4.0 \
+  -I./Common \
+  -I./PhysStruct \
+  -I./Source \
+  -I./MeasureEngines \
+  -I./Util \
+  Executables/calculate_chi.cpp \
+  -o calculate_chi
+
+# Run with multiple ranks:
+mpiexec -n 4 ./calculate_chi config.json
+
+
+# ============================================================
+# Serial builds (g++, no MPI; calculate_chi here is NOT parallel)
 # ============================================================
 
 # calculate_fermi
@@ -30,7 +51,7 @@ g++ -std=c++17 -O2 -DNDEBUG \
   Executables/calculate_fermi.cpp \
   -o calculate_fermi
 
-# calculate_chi
+# calculate_chi serial fallback
 g++ -std=c++17 -O2 -DNDEBUG \
   -I. \
   -I./include \

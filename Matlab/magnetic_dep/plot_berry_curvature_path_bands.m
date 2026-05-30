@@ -1,14 +1,13 @@
 function H = plot_berry_curvature_path_bands(txt_file)
 
-clc; close all;
 
 default_root = "E:\rg_master\rhombohedral\data";
 
 band_list = [4, 5, 6];
 energy_unit = "eV";
 energy_shift_eV = 0.0;
-color_energy_window_eV = [0.5, 0.9];
-berry_clim = [];         % [] = auto; or set manually, e.g. [-10, 10]
+color_energy_window_eV = [0.45, 0.9];
+berry_clim = [-100,100];         % [] = auto; or set manually, e.g. [-10, 10]
 
 FS = 15;
 LW = 3.0;

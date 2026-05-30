@@ -4,34 +4,36 @@ clc; close all;
 % =========================
 % USER SETTINGS
 % =========================
-
-T_target = 6.4;       
+T_target = 6.4;
+artificial_polar_target = 0;
 quantity = "psi";          % "psi" or "X"
-doping_range = [-1, 0];    % manually fixed doping range
-doping_N = 300;       
-                      
+
+doping_range = [-1, 0];    % 10^12 cm^-2
+doping_N = 300;
+
 use_abs_diff = true;       % true: abs(fwd-bwd)
-use_artificial_polar = true;
-                      
-FS = 16;              
-                      
-default_dir = 'E:\rg_master\rhombohedral\Matlab\hyst_data';
-                      
+FS = 16;
+
+default_dir = 'E:\rg_master\rhombohedral\Matlab\hyst';
+if ~isfolder(default_dir)
+    default_dir = 'E:\rg_master\rhombohedral\Matlab\hyst_data';
+end
+
 % =========================
-% Select MAT file     
+% Select MAT file
 % =========================
 if ~isfolder(default_dir)
     default_dir = pwd;
-end                   
-
-[fname, fpath] = uigetfile(fullfile(default_dir, '*.mat'), ...
-    'Select hyst_allT_allArtificialPolar.mat');
-
-if isequal(fname,0)   
-    OUT = [];         
-    return;           
 end
-                      
+
+[fname, fpath] = uigetfile(fullfile(default_dir, 'hyst*.mat'), ...
+    'Select hyst_allB*.mat');
+
+if isequal(fname,0)
+    OUT = [];
+    return;
+end
+
 matfile = fullfile(fpath, fname);
 S = load(matfile);
 
@@ -44,38 +46,29 @@ HYST = S.HYST;
 % =========================
 % Select valid entries
 % =========================
-valid = arrayfun(@(x) isfield(x,"T") && isfinite(x.T), HYST);
+valid = arrayfun(@is_valid_hyst_entry_, HYST);
 entries = HYST(valid);
 
 if isempty(entries)
-    error("No valid HYST entries found.");
+    error("No valid real-B HYST entries found.");
 end
 
 tolT = 1e-8;
-E = entries(abs([entries.T] - T_target) < tolT);
+tolP = 1e-8;
 
+E = entries(abs([entries.T] - T_target) < tolT);
 if isempty(E)
     Tall = unique([entries.T]);
     error("No data found for T = %.6g K. Available T: %s", ...
         T_target, mat2str(Tall));
 end
 
-% =========================
-% B / polar field name
-% =========================
-if use_artificial_polar
-    B_field_name = "artificial_polar";
-else
-    B_field_name = "polar";
-end
-
-validB = arrayfun(@(x) isfield(x, B_field_name) && ...
-    isfinite(x.(B_field_name)), E);
-
-E = E(validB);
-
-if isempty(E)
-    error("No entries contain field %s.", B_field_name);
+if isfield(E, "artificial_polar")
+    E = E(abs([E.artificial_polar] - artificial_polar_target) < tolP);
+    if isempty(E)
+        error("No data found for artificial polar = %.6g meV.", ...
+            artificial_polar_target);
+    end
 end
 
 % =========================
@@ -92,7 +85,7 @@ Z = nan(numel(E), doping_N);
 for i = 1:numel(E)
 
     R = E(i);
-    B_list(i) = R.(B_field_name);
+    B_list(i) = R.B_T;
 
     [xf, yf, xb, yb] = get_quantity_curves_(R, quantity);
 
@@ -161,16 +154,10 @@ else
     cb.Label.String = sprintf('$\\Delta |%s| = |%s|_{\\rm fwd}-|%s|_{\\rm bwd}$', ...
         quantity, quantity, quantity);
 end
-
 cb.Label.Interpreter = 'latex';
 
 xlabel(ax, 'Doping $(10^{12}\,\mathrm{cm}^{-2})$', 'Interpreter','latex');
-
-if use_artificial_polar
-    ylabel(ax, 'Artificial polar / $B$ proxy (meV)', 'Interpreter','latex');
-else
-    ylabel(ax, '$B$ / polar (meV)', 'Interpreter','latex');
-end
+ylabel(ax, '$B$ (T)', 'Interpreter','latex');
 
 title(ax, sprintf('$T=%.3f\\,\\mathrm{K}$, hysteresis strength map of $|%s|$', ...
     T_target, quantity), ...
@@ -190,8 +177,8 @@ set(ax, ...
 OUT = struct();
 OUT.matfile = matfile;
 OUT.T_target = T_target;
+OUT.artificial_polar_target = artificial_polar_target;
 OUT.quantity = quantity;
-OUT.B_field_name = B_field_name;
 OUT.B_list = B_list;
 OUT.dop_grid = dop_grid;
 OUT.Z = Z;
@@ -200,15 +187,24 @@ OUT.ax = ax;
 
 fprintf("\nLoaded: %s\n", matfile);
 fprintf("T = %.6g K\n", T_target);
+fprintf("Artificial polar = %.6g meV\n", artificial_polar_target);
 fprintf("Quantity = %s\n", quantity);
 fprintf("Doping range = [%.6g, %.6g]\n", dop_grid(1), dop_grid(end));
-fprintf("B/polar range = [%.6g, %.6g]\n", min(B_list), max(B_list));
+fprintf("B range = [%.6g, %.6g] T\n", min(B_list), max(B_list));
 
 end
 
 % ============================================================
-% Get fwd/bwd quantity curves
+% Helpers
 % ============================================================
+function ok = is_valid_hyst_entry_(R)
+
+ok = isfield(R,"T") && isfield(R,"B_T") && ...
+    isfinite(R.T) && isfinite(R.B_T) && ...
+    isfield(R,"dop_fwd") && isfield(R,"dop_bwd");
+
+end
+
 function [xf, yf, xb, yb] = get_quantity_curves_(R, quantity)
 
 xf = R.dop_fwd(:);

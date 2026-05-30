@@ -5,13 +5,10 @@ function H = plot_orbital_moment_kmesh_maps(txt_file)
 % ============================================================
 data_folder = "E:\rg_master\rhombohedral\data\orbital_moment_sk_50_b1b2_0.00125\D-0.010";
 
-band_list = 4;         % choose one band, or a short list; [] means all bands
+band_list = 5;         % choose one band, or a short list; [] means all bands
 energy_unit = "eV";      % "eV" or "meV"
 energy_shift_eV = 0.0;   % subtract this before plotting
-B_list_T = [1, 5];       % plot orbital energy shifts for these fields
 valley_choice = "plus";  % "plus" or "minus"
-spin_choice = "up";      % "up" or "down"
-g_factor = 2.0;
 plot_energy_map = false;
 
 xy_mode = "kxy";         % "kxy" or "ij"
@@ -112,13 +109,9 @@ H.bands = bands;
 H.maps = struct([]);
 H.meta = meta;
 H.columns = columns;
-H.B_list_T = B_list_T;
 H.valley_choice = valley_choice;
-H.spin_choice = spin_choice;
-H.g_factor = g_factor;
 
 tau = valley_sign_(valley_choice);
-s_spin = spin_sign_(spin_choice);
 
 for ib = 1:numel(bands)
     b = bands(ib);
@@ -149,59 +142,31 @@ for ib = 1:numel(bands)
         figE = [];
     end
 
-    for iB = 1:numel(B_list_T)
-        B_T = B_list_T(iB);
-        dE_orb_meV = -m_valley * 5.7883818060e-2 * B_T;
-        dE_total_meV = dE_orb_meV ...
-            + s_spin * g_factor * 5.7883818060e-2 * B_T;
+    figM = make_map_figure_( ...
+        x, y, m_valley, ...
+        sprintf("band %d: orbital moment, valley %s", b, valley_choice), ...
+        "m_{orb} (\mu_B)", ...
+        x_label, y_label, ...
+        turbo(256), ...
+        choose_m_clim_(m_valley, m_clim_mode), ...
+        FS, marker_size);
 
-        m_clim = choose_m_clim_(m_valley, m_clim_mode);
-        dE_clim = choose_m_clim_(dE_total_meV, "minmax");
-
-        figPair = make_pair_map_figure_( ...
-            x, y, ...
-            m_valley, dE_total_meV, ...
-            sprintf("band %d, valley %s, spin %s, B=%g T", ...
-                b, valley_choice, spin_choice, B_T), ...
-            "m_{orb} (\mu_B)", "\DeltaE_{orb+Z} (meV)", ...
-            x_label, y_label, ...
-            turbo(256), parula(256), ...
-            m_clim, dE_clim, ...
-            FS, marker_size);
-
-        if save_figure
-            btag = B_tag_(B_T);
-            outPair = fullfile(out_dir, sprintf( ...
-                "%s_band%d_valley_%s_spin_%s_morb_dE_%s_map.png", ...
-                base, b, valley_choice, spin_choice, btag));
-            exportgraphics(figPair, outPair, "Resolution", 300);
-            if save_fig_file
-                savefig(figPair, replace(outPair, ".png", ".fig"));
-            end
-            fprintf("Saved figure: %s\n", outPair);
+    if save_figure
+        outM = fullfile(out_dir, sprintf( ...
+            "%s_band%d_valley_%s_morb_map.png", ...
+            base, b, valley_choice));
+        exportgraphics(figM, outM, "Resolution", 300);
+        if save_fig_file
+            savefig(figM, replace(outM, ".png", ".fig"));
         end
-
-        H.maps(ib).B(iB).B_T = B_T;
-        H.maps(ib).B(iB).m_orb_valley_muB = m_valley;
-        H.maps(ib).B(iB).dE_orb_meV = dE_orb_meV;
-        H.maps(ib).B(iB).dE_total_meV = dE_total_meV;
-        H.maps(ib).B(iB).figure_pair = figPair;
+        fprintf("Saved figure: %s\n", outM);
     end
 
     H.maps(ib).band = b;
     H.maps(ib).E_plot = E;
     H.maps(ib).m_orb_muB = m_valley;
     H.maps(ib).figure_E = figE;
-end
-
-function tag = B_tag_(B_T)
-s = sprintf("%.10f", B_T);
-s = regexprep(s, "0+$", "");
-s = regexprep(s, "\.$", "");
-if s == "-0"
-    s = "0";
-end
-tag = "B" + string(s) + "T";
+    H.maps(ib).figure_m = figM;
 end
 
 function f = latest_txt_in_folder_(folder, pattern)
@@ -226,64 +191,6 @@ switch lower(string(valley_choice))
     otherwise
         error('valley_choice must be "plus" or "minus".');
 end
-end
-
-function s = spin_sign_(spin_choice)
-switch lower(string(spin_choice))
-    case {"up", "+", "spin_up"}
-        s = +1;
-    case {"down", "dn", "dwn", "-", "spin_down"}
-        s = -1;
-    otherwise
-        error('spin_choice must be "up" or "down".');
-end
-end
-
-function fig = make_pair_map_figure_(x, y, val_left, val_right, ttl, ...
-    cb_label_left, cb_label_right, x_label, y_label, cmap_left, cmap_right, ...
-    clim_left, clim_right, FS, marker_size)
-
-fig = figure("Color", "w", "Units", "pixels", "Position", [120 120 1160 540]);
-tiledlayout(fig, 1, 2, "TileSpacing", "compact", "Padding", "compact");
-
-ax1 = nexttile;
-scatter(ax1, x, y, marker_size, val_left, "filled", ...
-    "MarkerEdgeAlpha", 0.0, ...
-    "MarkerFaceAlpha", 1.0);
-axis(ax1, "equal");
-box(ax1, "on");
-set(ax1, "FontSize", FS, "LineWidth", 1.3, "TickDir", "in", "Box", "on");
-colormap(ax1, cmap_left);
-if ~isempty(clim_left)
-    clim(ax1, clim_left);
-end
-cb1 = colorbar(ax1);
-cb1.Label.String = cb_label_left;
-cb1.LineWidth = 1.0;
-xlabel(ax1, x_label);
-ylabel(ax1, y_label);
-title(ax1, "orbital moment", "Interpreter", "none");
-
-ax2 = nexttile;
-scatter(ax2, x, y, marker_size, val_right, "filled", ...
-    "MarkerEdgeAlpha", 0.0, ...
-    "MarkerFaceAlpha", 1.0);
-axis(ax2, "equal");
-box(ax2, "on");
-set(ax2, "FontSize", FS, "LineWidth", 1.3, "TickDir", "in", "Box", "on");
-colormap(ax2, cmap_right);
-if ~isempty(clim_right)
-    clim(ax2, clim_right);
-end
-cb2 = colorbar(ax2);
-cb2.Label.String = cb_label_right;
-cb2.LineWidth = 1.0;
-xlabel(ax2, x_label);
-ylabel(ax2, y_label);
-title(ax2, "energy shift", "Interpreter", "none");
-
-sgtitle(fig, ttl, "Interpreter", "none", "FontSize", FS);
-
 end
 
 function fig = make_map_figure_(x, y, val, ttl, cb_label, x_label, y_label, cmap, clim_value, FS, marker_size)

@@ -12,8 +12,8 @@ if ~isfolder(default_root)
     default_root = pwd;
 end
 
-iq_default = 4;
-jq_default = 0;
+iq_default = 3;
+jq_default = -6;
 FS = 14;
 
 % =========================
@@ -148,9 +148,20 @@ y = nan(numel(L),1);
 
 fprintf("[scan] found %d chi files\n", numel(L));
 
+used_name_q = 0;
+used_table_q = 0;
+
 for k = 1:numel(L)
 
     fpath = string(fullfile(L(k).folder, L(k).name));
+
+    [iq_file, jq_file, has_q_in_name] = parse_q_from_filename_(L(k).name);
+
+    if has_q_in_name
+        if iq_file ~= iq_pick || jq_file ~= jq_pick
+            continue;
+        end
+    end
 
     H = parse_header_mu_doping_(fpath);
 
@@ -165,14 +176,21 @@ for k = 1:numel(L)
     end
 
     M = read_numeric_skiphash_(fpath);
-
     if isempty(M) || size(M,2) < 6
         continue;
     end
 
     C = detect_cols_chi_(M);
 
-    id = find(M(:,C.iq) == iq_pick & M(:,C.jq) == jq_pick, 1);
+    if has_q_in_name
+        id = find(all(isfinite(M(:, [C.Re])), 2), 1);
+        used_name_q = used_name_q + 1;
+    else
+        id = find(M(:,C.iq) == iq_pick & M(:,C.jq) == jq_pick, 1);
+        if ~isempty(id)
+            used_table_q = used_table_q + 1;
+        end
+    end
 
     if isempty(id)
         continue;
@@ -187,6 +205,37 @@ x = x(m);
 y = y(m);
 
 fprintf("[kept] %d valid points\n", numel(x));
+fprintf("[q source] filename=%d, table_fallback=%d\n", used_name_q, used_table_q);
+
+end
+
+% ============================================================
+% Helper: parse q from chi filename
+% Example:
+% chi_valley_plus_spin_up_q5_3_broadening0.1meV_chi_....txt
+% ============================================================
+function [iq, jq, ok] = parse_q_from_filename_(fname)
+
+iq = NaN;
+jq = NaN;
+ok = false;
+
+tok = regexp(char(fname), ...
+    '_q([+\-]?\d+)_([+\-]?\d+)(?:_|\.|$)', ...
+    'tokens', 'once');
+
+if isempty(tok)
+    return;
+end
+
+iq = str2double(tok{1});
+jq = str2double(tok{2});
+ok = isfinite(iq) && isfinite(jq);
+
+if ok
+    iq = round(iq);
+    jq = round(jq);
+end
 
 end
 

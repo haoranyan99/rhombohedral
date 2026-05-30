@@ -14,6 +14,22 @@ FS_tol_eV = 0.01;
 a = 2.46;
 default_dir = pwd;
 
+% Scan mode:
+%   "mu"     : plot different mu values for a selected branch/group.
+%   "branch" : plot different branches at one selected mu.
+scan_mode = "branch";
+fixed_mu = 0.791;
+
+% Branch labels:
+%   1 = valley_plus  spin_up
+%   2 = valley_plus  spin_down
+%   3 = valley_minus spin_up
+%   4 = valley_minus spin_down
+%
+% In scan_mode="mu", multiple entries are averaged for every mu.
+% In scan_mode="branch", each entry becomes one panel.
+branch_list = [1 2 3 4];
+
 % ============================================================
 % Manual mu list
 % ============================================================
@@ -39,8 +55,9 @@ mu_list = [0.789 0.79 0.791 0.792];
 remove_idx = [];
 
 % Axis limits
-xlim_user = [1.35 1.60];
-ylim_user = [-0.95 -0.75];
+% [] means auto-fit to the selected fermi patch.
+xlim_user = [];
+ylim_user = [];
 
 % ============================================================
 % Apply removal
@@ -48,14 +65,17 @@ ylim_user = [-0.95 -0.75];
 mu_list(remove_idx) = [];
 mu_list = sort(mu_list);
 
+[panel_mu_list, panel_branch_groups, panel_labels] = build_panel_cases_( ...
+    scan_mode, mu_list, fixed_mu, branch_list);
+
 supported_n = [1 2 3 4 6 8 9 12];
-nFile = numel(mu_list);
+nFile = numel(panel_mu_list);
 
 if ~ismember(nFile, supported_n)
     error(['Unsupported number of panels = %d\n' ...
            'Use 1,2,3,4,6,8,9,12\n' ...
-           'Current mu_list size = %d\n' ...
-           'Modify remove_idx manually.'], ...
+           'Current panel count = %d\n' ...
+           'Modify mu_list/remove_idx or branch_list.'], ...
            nFile, nFile);
 end
 
@@ -78,27 +98,27 @@ Flist = cell(nFile,1);
 
 for i = 1:nFile
 
-    mu = mu_list(i);
+    mu = panel_mu_list(i);
+    branch_group = panel_branch_groups{i};
     mu_folder = find_mu_folder_(root_dir, mu);
 
     if mu_folder == ""
         error('Cannot find folder for mu = %.6f', mu);
     end
 
-    Lbin = dir(fullfile(mu_folder, '*.bin'));
-
-    if isempty(Lbin)
-        error('No .bin file found in: %s', mu_folder);
-    end
-
-    bin_file = fullfile(Lbin(1).folder, Lbin(1).name);
+    bin_files = find_branch_bin_files_(mu_folder, branch_group);
 
     fprintf('\n[%d/%d]\n', i, nFile);
     fprintf('target mu = %.6f\n', mu);
+    fprintf('panel     = %s\n', panel_labels(i));
     fprintf('folder    = %s\n', mu_folder);
-    fprintf('file      = %s\n', bin_file);
+    fprintf('branches  = %d\n', numel(bin_files));
+    for ib = 1:numel(bin_files)
+        fprintf('file      = %s\n', bin_files(ib));
+    end
 
-    Flist{i} = read_fermiPatch_bin_v3_local_(bin_file);
+    Flist{i} = read_and_average_fermi_files_(bin_files);
+    Flist{i}.panel_label = panel_labels(i);
 
 end
 
@@ -113,16 +133,24 @@ for i = 1:nFile
     all_ky = [all_ky; Flist{i}.ky]; %#ok<AGROW>
 end
 
-kmax = max(sqrt(all_kx.^2 + all_ky.^2));
+all_kx = all_kx(isfinite(all_kx));
+all_ky = all_ky(isfinite(all_ky));
+
+if isempty(all_kx) || isempty(all_ky)
+    error('No finite k points found. Check bin reader and selected files.');
+end
+
+pad_x = 0.06 * max(eps, max(all_kx) - min(all_kx));
+pad_y = 0.06 * max(eps, max(all_ky) - min(all_ky));
 
 if isempty(xlim_user)
-    xlim_use = 1.15 * [-kmax kmax];
+    xlim_use = [min(all_kx) - pad_x, max(all_kx) + pad_x];
 else
     xlim_use = xlim_user;
 end
 
 if isempty(ylim_user)
-    ylim_use = 1.15 * [-kmax kmax];
+    ylim_use = [min(all_ky) - pad_y, max(all_ky) + pad_y];
 else
     ylim_use = ylim_user;
 end
@@ -166,6 +194,10 @@ for i = 1:nFile
 
     F = Flist{i};
 
+    if band_idx > F.dim
+        error('Requested band_idx=%d but bin file has dim=%d.', band_idx, F.dim);
+    end
+
     occ = F.occ_band(:, band_idx);
     Ek  = F.evals(:, band_idx);
 
@@ -179,6 +211,12 @@ for i = 1:nFile
 
         case 'energy'
             plot_data = abs(Ek - F.EF);
+    end
+
+    ok_plot = isfinite(F.kx) & isfinite(F.ky) & isfinite(plot_data) & ...
+              isfinite(Ek) & isfinite(occ);
+    if ~any(ok_plot)
+        error('No finite k/plot data for panel %d. Check bin reader/version.', i);
     end
 
     ax = nexttile;
@@ -202,10 +240,10 @@ for i = 1:nFile
     dy_b2_step = F.jq - jq_K;
 
     hSc = scatter(ax, ...
-        F.kx, ...
-        F.ky, ...
+        F.kx(ok_plot), ...
+        F.ky(ok_plot), ...
         marker_size, ...
-        plot_data, ...
+        plot_data(ok_plot), ...
         'filled', ...
         'MarkerEdgeColor','none');
 
@@ -216,12 +254,12 @@ for i = 1:nFile
     rows = hSc.DataTipTemplate.DataTipRows;
     
     % overwrite rows
-    rows(1) = dataTipTextRow('dx_b1_step', dx_b1_step);
-    rows(2) = dataTipTextRow('dy_b2_step', dy_b2_step);
+    rows(1) = dataTipTextRow('dx_b1_step', dx_b1_step(ok_plot));
+    rows(2) = dataTipTextRow('dy_b2_step', dy_b2_step(ok_plot));
     
     % append extra rows
-    rows(end+1) = dataTipTextRow('energy', Ek);
-    rows(end+1) = dataTipTextRow('occ', occ);
+    rows(end+1) = dataTipTextRow('energy', Ek(ok_plot));
+    rows(end+1) = dataTipTextRow('occ', occ(ok_plot));
     
     hSc.DataTipTemplate.DataTipRows = rows;
 
@@ -231,9 +269,11 @@ for i = 1:nFile
     % Draw b1 and b2 directions
     % --------------------------------------------------------
     
-    origin = [1.35, -0.75];   % choose a nice corner
-    
-    scale_arrow = 0.1;
+    origin = [ ...
+        xlim_use(1) + 0.07 * diff(xlim_use), ...
+        ylim_use(1) + 0.10 * diff(ylim_use)];
+
+    scale_arrow = 0.12 * min(diff(xlim_use), diff(ylim_use));
     
     b1v = scale_arrow * L.b1 / norm(L.b1);
     b2v = scale_arrow * L.b2 / norm(L.b2);
@@ -270,17 +310,16 @@ for i = 1:nFile
         'FontSize',12, ...
         'FontWeight','bold');
 
-    axis(ax,'equal');
-
     xlim(ax, xlim_use);
     ylim(ax, ylim_use);
+    axis(ax,'equal');
 
     caxis(ax, c_range);
     colormap(ax, flip(hot));
 
     title(ax, ...
-        sprintf('\\mu=%.4f, dop=%.4f', ...
-        F.EF, F.doping), ...
+        sprintf('%s, dop=%.4f', ...
+        F.panel_label, F.doping), ...
         'FontSize', 12, ...
         'FontWeight','normal');
 
@@ -301,8 +340,8 @@ ylabel(cb, cb_label, ...
     'FontSize', 15);
 
 sgtitle( ...
-    sprintf('Band %d, mode = %s', ...
-    band_idx, plot_mode), ...
+    sprintf('Band %d, mode = %s, scan = %s', ...
+    band_idx, plot_mode, scan_mode), ...
     'FontSize', 18, ...
     'FontWeight','bold');
 
@@ -312,6 +351,82 @@ end
 % ============================================================
 % Layout helper
 % ============================================================
+function [panel_mu_list, panel_branch_groups, panel_labels] = build_panel_cases_( ...
+    scan_mode, mu_list, fixed_mu, branch_list)
+
+scan_mode = lower(string(scan_mode));
+branch_list = branch_list(:).';
+validate_branch_list_(branch_list);
+
+switch scan_mode
+    case "mu"
+        panel_mu_list = mu_list(:).';
+        panel_branch_groups = cell(numel(panel_mu_list), 1);
+        panel_labels = strings(numel(panel_mu_list), 1);
+        branch_label = branch_group_label_(branch_list);
+
+        for i = 1:numel(panel_mu_list)
+            panel_branch_groups{i} = branch_list;
+            panel_labels(i) = sprintf("\\mu=%.4f, %s", ...
+                panel_mu_list(i), branch_label);
+        end
+
+    case "branch"
+        panel_mu_list = fixed_mu * ones(1, numel(branch_list));
+        panel_branch_groups = cell(numel(branch_list), 1);
+        panel_labels = strings(numel(branch_list), 1);
+
+        for i = 1:numel(branch_list)
+            panel_branch_groups{i} = branch_list(i);
+            panel_labels(i) = sprintf("\\mu=%.4f, %s", ...
+                fixed_mu, branch_label_(branch_list(i)));
+        end
+
+    otherwise
+        error('Unknown scan_mode=%s. Use "mu" or "branch".', scan_mode);
+end
+
+end
+
+function validate_branch_list_(branch_list)
+
+if isempty(branch_list) || any(~ismember(branch_list, 1:4))
+    error('branch_list must contain branch numbers from 1 to 4.');
+end
+
+end
+
+function label = branch_group_label_(branch_list)
+
+if numel(branch_list) == 1
+    label = branch_label_(branch_list(1));
+else
+    parts = strings(1, numel(branch_list));
+    for i = 1:numel(branch_list)
+        parts(i) = "b" + string(branch_list(i));
+    end
+    label = "avg(" + strjoin(parts, "+") + ")";
+end
+
+end
+
+function label = branch_label_(branch_id)
+
+switch branch_id
+    case 1
+        label = "b1: K+, up";
+    case 2
+        label = "b2: K+, down";
+    case 3
+        label = "b3: K-, up";
+    case 4
+        label = "b4: K-, down";
+    otherwise
+        error('Unknown branch_id=%d.', branch_id);
+end
+
+end
+
 function [nRow, nCol] = layout_for_n_(n)
 
 switch n
@@ -398,6 +513,104 @@ end
 
 
 % ============================================================
+% Branch file selection and averaging
+% ============================================================
+function bin_files = find_branch_bin_files_(mu_folder, branch_group)
+
+bin_files = strings(0,1);
+branch_group = branch_group(:).';
+
+for ib = 1:numel(branch_group)
+    pattern = branch_file_pattern_(branch_group(ib));
+    L = dir(fullfile(mu_folder, pattern));
+    if isempty(L)
+        error('Missing branch file in %s: %s', mu_folder, pattern);
+    end
+    bin_files(end+1,1) = string(fullfile(L(1).folder, L(1).name)); %#ok<AGROW>
+end
+
+end
+
+function pattern = branch_file_pattern_(branch_id)
+
+switch branch_id
+    case 1
+        pattern = 'fermi_valley_plus_spin_up_patch.bin';
+    case 2
+        pattern = 'fermi_valley_plus_spin_down_patch.bin';
+    case 3
+        pattern = 'fermi_valley_minus_spin_up_patch.bin';
+    case 4
+        pattern = 'fermi_valley_minus_spin_down_patch.bin';
+    otherwise
+        error('Unknown branch_id=%d.', branch_id);
+end
+
+end
+
+function Favg = read_and_average_fermi_files_(files)
+
+files = string(files(:));
+Favg = read_fermiPatch_bin_v3_local_(files(1));
+Favg.source_files = files;
+Favg.n_averaged = numel(files);
+
+if numel(files) == 1
+    return;
+end
+
+eval_sum = Favg.evals;
+occ_band_sum = Favg.occ_band;
+occ_avg_sum = Favg.occ_avg;
+doping_sum = Favg.doping;
+filling_sum = Favg.filling;
+doping_spin_sum = Favg.doping_spin;
+filling_spin_sum = Favg.filling_spin;
+
+for i = 2:numel(files)
+    F = read_fermiPatch_bin_v3_local_(files(i));
+    assert_same_kmesh_(Favg, F, files(i));
+
+    eval_sum = eval_sum + F.evals;
+    occ_band_sum = occ_band_sum + F.occ_band;
+    occ_avg_sum = occ_avg_sum + F.occ_avg;
+    doping_sum = doping_sum + F.doping;
+    filling_sum = filling_sum + F.filling;
+    doping_spin_sum = doping_spin_sum + F.doping_spin;
+    filling_spin_sum = filling_spin_sum + F.filling_spin;
+end
+
+n = numel(files);
+Favg.evals = eval_sum ./ n;
+Favg.occ_band = occ_band_sum ./ n;
+Favg.occ_avg = occ_avg_sum ./ n;
+Favg.doping = doping_sum ./ n;
+Favg.filling = filling_sum ./ n;
+Favg.doping_spin = doping_spin_sum ./ n;
+Favg.filling_spin = filling_spin_sum ./ n;
+Favg.spin_sign = 0;
+
+end
+
+function assert_same_kmesh_(A, B, file_path)
+
+if A.NkTot ~= B.NkTot || A.dim ~= B.dim
+    error('Cannot average branch with different size/dim: %s', file_path);
+end
+
+tol = 1e-10;
+same_grid = isequal(A.iq, B.iq) && isequal(A.jq, B.jq) && ...
+            max(abs(A.kx - B.kx)) < tol && ...
+            max(abs(A.ky - B.ky)) < tol;
+
+if ~same_grid
+    error('Cannot average branch with different k mesh: %s', file_path);
+end
+
+end
+
+
+% ============================================================
 % Read fermiPatch bin
 % ============================================================
 function F = read_fermiPatch_bin_v3_local_(file_path)
@@ -412,6 +625,9 @@ cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 
 magic   = fread(fid, 1, 'int32');
 version = fread(fid, 1, 'int32');
+if magic ~= 20260510
+    error('Unexpected fermiPatch magic=%d in %s.', magic, file_path);
+end
 
 NkTot = fread(fid, 1, 'int32');
 dim   = fread(fid, 1, 'int32');
@@ -428,6 +644,15 @@ mesh_raw = fread(fid, 32, '*char')';
 mesh_type = char(mesh_raw);
 mesh_type = erase(mesh_type, char(0));
 mesh_type = strtrim(mesh_type);
+
+spin_sign = 0;
+doping_spin = NaN;
+filling_spin = NaN;
+if version >= 5
+    spin_sign = fread(fid, 1, 'int32');
+    doping_spin = fread(fid, 1, 'double');
+    filling_spin = fread(fid, 1, 'double');
+end
 
 iq = zeros(NkTot,1);
 jq = zeros(NkTot,1);
@@ -463,6 +688,9 @@ F.EF = EF;
 F.T_K = T_K;
 F.doping = doping;
 F.filling = filling;
+F.spin_sign = spin_sign;
+F.doping_spin = doping_spin;
+F.filling_spin = filling_spin;
 F.dx = dx;
 F.dy = dy;
 F.mesh_type = mesh_type;

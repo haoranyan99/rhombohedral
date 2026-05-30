@@ -4,8 +4,8 @@ clc; close all;
 % =========================
 % USER SETTINGS
 % =========================
-T_target = 6.5;              % no T folder, but still needed for coef.eval
-polar_list_meV = [];         % [] = use all polar folders
+T_target = 6.4;              % no T folder, but still needed for coef.eval
+polar_list_meV = [0];         % [] = use all polar folders
 
 plot_a1  = true;
 plot_psi = true;

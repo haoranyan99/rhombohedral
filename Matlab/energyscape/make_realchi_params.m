@@ -34,10 +34,31 @@ function par = make_realchi_params(noAsk)
     % =================== doping reference ====================
     par.dop_span = 1.0;
 
-    % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
-    % =================== T = @(dop) -A * dop^2 + C for lattice mode boundary (A,C detemined in coeff.m) ====================
+    % =================== lattice transition boundary =========
+    % The lattice X double-well boundary is defined by
+    %   delta = (5/6)*b2^2 - a2*c2 = 0.
+    %
+    % "parabola" keeps the old T_boundary(dop) = -A*dop^2 + C.
+    % "sigmoid_step" defines a monotonic boundary x_c(T):
+    %   T = 0..T_knee_K  : slowly moves right
+    %   T > T_knee_K    : rapidly approaches dop_right
+    % The coefficient code inverts x_c(T) numerically to get T_boundary(dop).
+    par.Lat_boundary_mode = "sigmoid_step";
+
+    % Old parabola parameters, kept for quick comparison.
     par.Lat_pt1 = [-2, 2];
     par.Lat_pt2 = [0, 10];
+
+    par.Lat_step = struct();
+    par.Lat_step.T_min_K = 0;
+    par.Lat_step.T_knee_K = 8;
+    par.Lat_step.T_max_K = 10;
+    par.Lat_step.dop_left = -2.0;
+    par.Lat_step.dop_knee = -0.60;
+    par.Lat_step.dop_right = 0.0;
+    par.Lat_step.slow_power = 1.45;
+    par.Lat_step.fast_width_K = 0.35;
+    par.Lat_step.n_grid = 5001;
 
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================

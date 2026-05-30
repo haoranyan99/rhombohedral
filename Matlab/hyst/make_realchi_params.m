@@ -13,8 +13,8 @@ function par = make_realchi_params(noAsk)
     par = struct();
 
     % =================== q-point selection ===================
-    par.iq_pick = 4; 
-    par.jq_pick = 0;
+    par.iq_pick = 3; 
+    par.jq_pick = -6;
 
     % =================== chi -> coefficients =================
     par.invV       = 0.068;
@@ -24,8 +24,8 @@ function par = make_realchi_params(noAsk)
     par.T_tol      = 1e-8;
 
     % =================== coupling ============================
-    par.lambda0 = 3;
-    par.lambda  = 3;
+    par.lambda0 = 1;
+    par.lambda  = 1;
 
     % =================== psi window ==========================
     par.psi1_lim = [-12, 12];
@@ -34,10 +34,31 @@ function par = make_realchi_params(noAsk)
     % =================== doping reference ====================
     par.dop_span = 1.0;
 
-    % =================== define pt1(dop1, T1), pt2(dop2, T2) on the lattice trans boundary ==============
-    % =================== T = @(dop) -A * dop^2 + C for lattice mode boundary (A,C detemined in coeff.m) ====================
-    par.Lat_pt1 = [-2, 2];
+    % =================== lattice transition boundary =========
+    % The lattice X double-well boundary is defined by
+    %   delta = (5/6)*b2^2 - a2*c2 = 0.
+    %
+    % "parabola" keeps the old T_boundary(dop) = -A*dop^2 + C.
+    % "sigmoid_step" defines a monotonic boundary x_c(T):
+    %   T = 0..T_knee_K  : slowly moves right
+    %   T > T_knee_K    : rapidly approaches dop_right
+    % The coefficient code inverts x_c(T) numerically to get T_boundary(dop).
+    par.Lat_boundary_mode = "sigmoid_step";
+
+    % Old parabola parameters, kept for quick comparison.
+    par.Lat_pt1 = [-1.5, 2];
     par.Lat_pt2 = [0, 10];
+
+    par.Lat_step = struct();
+    par.Lat_step.T_min_K = 0;
+    par.Lat_step.T_knee_K = 8;
+    par.Lat_step.T_max_K = 10;
+    par.Lat_step.dop_left = -1.8;
+    par.Lat_step.dop_knee = -1.5;
+    par.Lat_step.dop_right = 0.0;
+    par.Lat_step.slow_power = 1.45;
+    par.Lat_step.fast_width_K = 0.35;
+    par.Lat_step.n_grid = 5001;
 
     
     % =================== a2 = alpha * (T - Tc) is predefined.(alpha > 0) ====================
@@ -120,21 +141,18 @@ function par = make_realchi_params(noAsk)
     par.min.nearby_delta = 0.2;
 
     % =========================================================
-    % =================== PLOTTING SMOOTH =====================
+    % =================== CHI INPUT SMOOTHING =================
     % =========================================================
     par.smooth = struct();
 
-    % Lorentz broadening for psi(doping) plots ONLY
-    par.smooth.use_lorentz = false;
+    % This Lorentz broadening is applied to chi(doping) BEFORE hysteresis.
+    % It is the only smoothing/broadening used by the hyst code.
+    par.smooth.use_lorentz = true;
 
-    % gamma in SAME UNIT as doping axis.
-    % Here we keep your convention: gamma_factor * median(diff(dop_grid)).
-    %   gamma_factor <0 or NaN -> OFF
-    %   gamma_factor = 0       -> auto (1.5 * dx)
-    par.smooth.lorentz_gamma_factor = 2;  % was "lorentz_gamma_dop" in your old code
-
-    % optional: also smooth chi(dop) in panel 1
-    par.smooth.smooth_chi_curve = false;
+    % Lorentz width in doping units. Set NaN to use
+    % lorentz_gamma_factor * median(diff(doping)).
+    par.smooth.lorentz_gamma = 0.01;
+    par.smooth.lorentz_gamma_factor = 2;
 
     % =========================================================
     % =================== plotting style ======================

@@ -31,9 +31,9 @@
     "Dfield_eV": -0.01,
     "magnetic_field": {
       "BList_T": {
-        "min": 0,
+        "min": 5,
         "max": 10,
-        "num": 11
+        "num": 1
       },
       "g_factor": 2.0,
       "orbital_derivative_dk": 1e-5
@@ -41,7 +41,7 @@
 
     "kmesh": {
       "type": "b1b2",
-      "Nk": 50,
+      "Nk": 60,
       "dk_frac": 0.00125
     },
 
@@ -54,9 +54,9 @@
     },
 
     "muList_eV": {
-      "min": 0.50,
-      "max": 0.80,
-      "num": 301  
+      "min": 0.55,
+      "max": 0.85,
+      "num": 601  
     }
   },
 
@@ -88,7 +88,7 @@
   "calculate_berry_curvature": {
     "model": "sk",
     "mode": "kpath",
-    "Dfield_eV": -0.0,
+    "Dfield_eV": -0.01,
     "derivative_dk": 1e-5,
 
     "kmesh": {
@@ -159,8 +159,8 @@
     "Dfield_eV": -0.01,
     "eta": 1e-4,
 
-    "iq": 4,
-    "jq": 0,
+    "iq": 1,
+    "jq": 2,
     "use_form_factor": true,
     "diagonal_band_only": false,
 
@@ -171,12 +171,12 @@
     },
 
     "muList_eV": {
-      "min": 0.500,
-      "max": 0.745,
-      "num": 246   
+      "min": 0.550,
+      "max": 0.850,
+      "num": 301   
     },
 
-    "fermi_patch_path": "data/fermi_2026-05-25_235308/D-0.010/B1T",
+    "fermi_patch_path": "data/D-0.010/B0T",
     "output_suffix": "auto"
   }
 }
